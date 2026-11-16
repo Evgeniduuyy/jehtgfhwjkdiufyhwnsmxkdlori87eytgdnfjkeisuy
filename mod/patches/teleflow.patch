@@ -1,3 +1,30 @@
+diff --git a/Telegram/BUILD b/Telegram/BUILD
+index 1ac8279b..98ccc170 100644
+--- a/Telegram/BUILD
++++ b/Telegram/BUILD
+@@ -641,7 +641,7 @@ plist_fragment(
+     template =
+     """
+     <key>CFBundleDisplayName</key>
+-    <string>Telegram</string>
++    <string>KinopoiskGram</string>
+     """
+ )
+ 
+@@ -1696,11 +1696,11 @@ plist_fragment(
+     <key>CFBundleDevelopmentRegion</key>
+     <string>en</string>
+     <key>CFBundleDisplayName</key>
+-    <string>Telegram</string>
++    <string>KinopoiskGram</string>
+     <key>CFBundleIdentifier</key>
+     <string>{telegram_bundle_id}</string>
+     <key>CFBundleName</key>
+-    <string>Telegram</string>
++    <string>KinopoiskGram</string>
+     <key>CFBundlePackageType</key>
+     <string>APPL</string>
+     <key>CFBundleSignature</key>
 diff --git a/Telegram/Telegram-iOS/InfoBazel.plist b/Telegram/Telegram-iOS/InfoBazel.plist
 index ae1b92de..cd3e10bc 100644
 --- a/Telegram/Telegram-iOS/InfoBazel.plist

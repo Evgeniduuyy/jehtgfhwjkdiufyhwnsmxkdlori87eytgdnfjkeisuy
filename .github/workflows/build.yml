@@ -83,6 +83,9 @@ jobs:
           cp ../mod/appicon/*.png Telegram/Telegram-iOS/DefaultAppIcon.xcassets/AppIconLLC.appiconset/
           echo "Installing fresh provisioning profiles"
           cp ../mod/fake-codesigning/profiles/*.mobileprovision build-system/fake-codesigning/profiles/
+          echo "Installing app icon (Icon Composer)"
+          rm -rf Telegram/Telegram-iOS/Telegram.icon
+          cp -R ../mod/telegram-icon Telegram/Telegram-iOS/Telegram.icon
           python3 - <<'PY'
           import json, os
           api_id = os.environ.get("TG_API_ID", "").strip()
