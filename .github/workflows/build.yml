@@ -81,6 +81,8 @@ jobs:
           done
           echo "Installing app icon"
           cp ../mod/appicon/*.png Telegram/Telegram-iOS/DefaultAppIcon.xcassets/AppIconLLC.appiconset/
+          echo "Installing fresh provisioning profiles"
+          cp ../mod/fake-codesigning/profiles/*.mobileprovision build-system/fake-codesigning/profiles/
           python3 - <<'PY'
           import json, os
           api_id = os.environ.get("TG_API_ID", "").strip()
@@ -124,7 +126,6 @@ jobs:
             --cacheDir="$HOME/telegram-bazel-cache" \
             build \
             --continueOnError \
-            --disableProvisioningProfiles \
             --configurationPath=build-system/teleflow-configuration.json \
             --codesigningInformationPath=build-system/fake-codesigning \
             --buildNumber=${{ github.run_number }} \
