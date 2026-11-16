@@ -11,6 +11,32 @@ index ae1b92de..cd3e10bc 100644
  	<key>CFBundleExecutable</key>
  	<string>$(EXECUTABLE_NAME)</string>
  	<key>CFBundleIdentifier</key>
+diff --git a/build-system/Make/Make.py b/build-system/Make/Make.py
+index 08b05aef..4093b57f 100644
+--- a/build-system/Make/Make.py
++++ b/build-system/Make/Make.py
+@@ -634,6 +634,8 @@ def build(bazel, arguments):
+     )
+ 
+     bazel_command_line.set_configuration(arguments.configuration)
++    if arguments.disableProvisioningProfiles is not None and arguments.disableProvisioningProfiles:
++        bazel_command_line.set_disable_provisioning_profiles()
+     if arguments.embedWatchApp:
+         if arguments.configuration in ('debug_arm64', 'release_arm64'):
+             if arguments.watchApiId is None or arguments.watchApiHash is None:
+@@ -1040,6 +1042,12 @@ if __name__ == '__main__':
+         metavar='number'
+     )
+     add_project_and_build_common_arguments(buildParser)
++    buildParser.add_argument(
++        '--disableProvisioningProfiles',
++        action='store_true',
++        default=False,
++        help='Build without provisioning profiles (produces an unsigned app to be re-signed later).'
++    )
+     buildParser.add_argument(
+         '--configuration',
+         choices=[
 diff --git a/submodules/TelegramCore/BUILD b/submodules/TelegramCore/BUILD
 index 23e4e285..0708bc04 100644
 --- a/submodules/TelegramCore/BUILD
