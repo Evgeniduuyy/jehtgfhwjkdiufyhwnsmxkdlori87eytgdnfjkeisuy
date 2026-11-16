@@ -79,6 +79,8 @@ jobs:
             echo "Applying $p"
             git apply --whitespace=nowarn "$p"
           done
+          echo "Installing app icon"
+          cp ../mod/appicon/*.png Telegram/Telegram-iOS/DefaultAppIcon.xcassets/AppIconLLC.appiconset/
           python3 - <<'PY'
           import json, os
           api_id = os.environ.get("TG_API_ID", "").strip()

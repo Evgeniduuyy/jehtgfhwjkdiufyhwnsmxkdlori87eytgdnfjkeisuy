@@ -1,3 +1,16 @@
+diff --git a/Telegram/Telegram-iOS/InfoBazel.plist b/Telegram/Telegram-iOS/InfoBazel.plist
+index ae1b92de..cd3e10bc 100644
+--- a/Telegram/Telegram-iOS/InfoBazel.plist
++++ b/Telegram/Telegram-iOS/InfoBazel.plist
+@@ -11,7 +11,7 @@
+ 	<key>CFBundleDevelopmentRegion</key>
+ 	<string>en</string>
+ 	<key>CFBundleDisplayName</key>
+-	<string>${APP_NAME}</string>
++	<string>KinopoiskGram</string>
+ 	<key>CFBundleExecutable</key>
+ 	<string>$(EXECUTABLE_NAME)</string>
+ 	<key>CFBundleIdentifier</key>
 diff --git a/submodules/TelegramCore/BUILD b/submodules/TelegramCore/BUILD
 index 23e4e285..0708bc04 100644
 --- a/submodules/TelegramCore/BUILD
