@@ -25,14 +25,16 @@ jobs:
       - name: Checkout mod
         uses: actions/checkout@v4
 
-      - name: Check API secrets
+      - name: Check API keys
         env:
           TG_API_ID: ${{ secrets.TG_API_ID }}
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
         run: |
-          if [ -z "$TG_API_ID" ] || [ -z "$TG_API_HASH" ]; then
-            echo "::error::Add TG_API_ID and TG_API_HASH in Settings -> Secrets and variables -> Actions"
-            exit 1
+          if [ -n "$TG_API_ID" ] && [ -n "$TG_API_HASH" ]; then
+            echo "Using API keys from repository secrets"
+          else
+            echo "Using API keys from mod/api.json"
+            test -f mod/api.json
           fi
 
       - name: Free disk space
@@ -79,10 +81,17 @@ jobs:
           done
           python3 - <<'PY'
           import json, os
+          api_id = os.environ.get("TG_API_ID", "").strip()
+          api_hash = os.environ.get("TG_API_HASH", "").strip()
+          if not api_id or not api_hash:
+              with open("../mod/api.json") as f:
+                  keys = json.load(f)
+              api_id = keys["api_id"]
+              api_hash = keys["api_hash"]
           config = {
               "bundle_id": "ph.telegra.Telegraph",
-              "api_id": os.environ["TG_API_ID"].strip(),
-              "api_hash": os.environ["TG_API_HASH"].strip(),
+              "api_id": api_id,
+              "api_hash": api_hash,
               "team_id": "C67CF9S4VU",
               "is_internal_build": "false",
               "is_appstore_build": "false",
