@@ -210,7 +210,7 @@ index cf1ab15d..bef5f044 100644
 +    return settings.shouldKeepDeletedMessages(in: kind)
 +}
 diff --git a/submodules/TelegramCore/Sources/State/SynchronizePeerReadState.swift b/submodules/TelegramCore/Sources/State/SynchronizePeerReadState.swift
-index b2e65895..fcaa7d34 100644
+index b2e65895..0c6a3ee1 100644
 --- a/submodules/TelegramCore/Sources/State/SynchronizePeerReadState.swift
 +++ b/submodules/TelegramCore/Sources/State/SynchronizePeerReadState.swift
 @@ -1,5 +1,7 @@
@@ -221,24 +221,68 @@ index b2e65895..fcaa7d34 100644
  internal import TelegramApi
  import SwiftSignalKit
  
-@@ -290,7 +292,7 @@ private func pushPeerReadState(network: Network, postbox: Postbox, stateManager:
+@@ -290,12 +292,17 @@ private func pushPeerReadState(network: Network, postbox: Postbox, stateManager:
                  let (channelId, accessHash) = (inputPeerChannelData.channelId, inputPeerChannelData.accessHash)
                  switch readState {
                  case let .idBased(maxIncomingReadId, _, _, _, markedUnread):
 -                    var pushSignal: Signal<Void, NoError> = network.request(Api.functions.channels.readHistory(channel: Api.InputChannel.inputChannel(.init(channelId: channelId, accessHash: accessHash)), maxId: maxIncomingReadId))
-+                    var pushSignal: Signal<Void, NoError> = (TeleFlowSettings.shared.ghostHideReadReceipts ? Signal<Api.Bool, MTRpcError>.single(.boolTrue) : network.request(Api.functions.channels.readHistory(channel: Api.InputChannel.inputChannel(.init(channelId: channelId, accessHash: accessHash)), maxId: maxIncomingReadId)))
-                     |> `catch` { _ -> Signal<Api.Bool, NoError> in
-                         return .complete()
+-                    |> `catch` { _ -> Signal<Api.Bool, NoError> in
+-                        return .complete()
+-                    }
+-                    |> mapToSignal { _ -> Signal<Void, NoError> in
+-                        return .complete()
++                    var pushSignal: Signal<Void, NoError>
++                    if TeleFlowSettings.shared.ghostHideReadReceipts {
++                        pushSignal = .complete()
++                    } else {
++                        pushSignal = network.request(Api.functions.channels.readHistory(channel: Api.InputChannel.inputChannel(.init(channelId: channelId, accessHash: accessHash)), maxId: maxIncomingReadId))
++                        |> `catch` { _ -> Signal<Api.Bool, NoError> in
++                            return .complete()
++                        }
++                        |> mapToSignal { _ -> Signal<Void, NoError> in
++                            return .complete()
++                        }
                      }
-@@ -320,7 +322,7 @@ private func pushPeerReadState(network: Network, postbox: Postbox, stateManager:
+                     if markedUnread {
+                         pushSignal = pushSignal
+@@ -320,20 +327,25 @@ private func pushPeerReadState(network: Network, postbox: Postbox, stateManager:
              default:
                  switch readState {
                  case let .idBased(maxIncomingReadId, _, _, _, markedUnread):
 -                    var pushSignal: Signal<Void, NoError> = network.request(Api.functions.messages.readHistory(peer: inputPeer, maxId: maxIncomingReadId))
-+                    var pushSignal: Signal<Void, NoError> = (TeleFlowSettings.shared.ghostHideReadReceipts ? Signal<Api.Bool, MTRpcError>.single(.boolTrue) : network.request(Api.functions.messages.readHistory(peer: inputPeer, maxId: maxIncomingReadId)))
-                     |> map(Optional.init)
-                     |> `catch` { _ -> Signal<Api.messages.AffectedMessages?, NoError> in
-                         return .single(nil)
+-                    |> map(Optional.init)
+-                    |> `catch` { _ -> Signal<Api.messages.AffectedMessages?, NoError> in
+-                        return .single(nil)
+-                    }
+-                    |> mapToSignal { result -> Signal<Void, NoError> in
+-                        if let result = result {
+-                            switch result {
+-                                case let .affectedMessages(affectedMessagesData):
+-                                    let (pts, ptsCount) = (affectedMessagesData.pts, affectedMessagesData.ptsCount)
+-                                    stateManager.addUpdateGroups([.updatePts(pts: pts, ptsCount: ptsCount)])
++                    var pushSignal: Signal<Void, NoError>
++                    if TeleFlowSettings.shared.ghostHideReadReceipts {
++                        pushSignal = .complete()
++                    } else {
++                        pushSignal = network.request(Api.functions.messages.readHistory(peer: inputPeer, maxId: maxIncomingReadId))
++                        |> map(Optional.init)
++                        |> `catch` { _ -> Signal<Api.messages.AffectedMessages?, NoError> in
++                            return .single(nil)
++                        }
++                        |> mapToSignal { result -> Signal<Void, NoError> in
++                            if let result = result {
++                                switch result {
++                                    case let .affectedMessages(affectedMessagesData):
++                                        let (pts, ptsCount) = (affectedMessagesData.pts, affectedMessagesData.ptsCount)
++                                        stateManager.addUpdateGroups([.updatePts(pts: pts, ptsCount: ptsCount)])
++                                }
+                             }
++                            return .complete()
+                         }
+-                        return .complete()
+                     }
+ 
+                     if markedUnread {
 diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift b/submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift
 index a8e5b04b..73d8b765 100644
 --- a/submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift
