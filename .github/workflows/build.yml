@@ -1,0 +1,167 @@
+name: Build TeleFlow IPA
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'README.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: xcode-27
+    timeout-minutes: 355
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout mod
+        uses: actions/checkout@v4
+
+      - name: Check API secrets
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+        run: |
+          if [ -z "$TG_API_ID" ] || [ -z "$TG_API_HASH" ]; then
+            echo "::error::Add TG_API_ID and TG_API_HASH in Settings -> Secrets and variables -> Actions"
+            exit 1
+          fi
+
+      - name: Free disk space
+        run: |
+          df -h /
+          for x in /Applications/Xcode_*.app; do
+            case "$x" in
+              *Xcode_27*) ;;
+              *) sudo rm -rf "$x" ;;
+            esac
+          done
+          sudo rm -rf ~/Library/Android /usr/local/share/dotnet /usr/local/lib/node_modules || true
+          xcrun simctl delete all || true
+          sudo rm -rf ~/Library/Developer/CoreSimulator/Caches || true
+          df -h /
+
+      - name: Select Xcode
+        run: |
+          ls -d /Applications/Xcode*.app
+          if [ -d /Applications/Xcode_27.1.app ]; then sudo xcode-select -s /Applications/Xcode_27.1.app; fi
+          xcodebuild -version
+
+      - name: Fetch Telegram source
+        run: |
+          TG_COMMIT=$(cat TELEGRAM_COMMIT)
+          git init -q tg
+          cd tg
+          git remote add origin https://github.com/TelegramMessenger/Telegram-iOS.git
+          git fetch -q --depth 1 origin "$TG_COMMIT"
+          git checkout -q FETCH_HEAD
+          git submodule update --init --recursive --depth 1 --jobs 8
+          df -h /
+
+      - name: Apply TeleFlow mod
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+        run: |
+          cd tg
+          cp -R ../mod/submodules/TeleFlow submodules/
+          for p in ../mod/patches/*.patch; do
+            echo "Applying $p"
+            git apply --whitespace=nowarn "$p"
+          done
+          python3 - <<'PY'
+          import json, os
+          config = {
+              "bundle_id": "ph.telegra.Telegraph",
+              "api_id": os.environ["TG_API_ID"].strip(),
+              "api_hash": os.environ["TG_API_HASH"].strip(),
+              "team_id": "C67CF9S4VU",
+              "is_internal_build": "false",
+              "is_appstore_build": "false",
+              "appstore_id": "0",
+              "app_specific_url_scheme": "tg",
+              "premium_iap_product_id": "",
+              "enable_siri": False,
+              "enable_icloud": False
+          }
+          with open("build-system/teleflow-configuration.json", "w") as f:
+              json.dump(config, f, indent=2)
+          PY
+
+      - name: Restore Bazel cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/telegram-bazel-cache
+          key: bazel-${{ hashFiles('TELEGRAM_COMMIT') }}-${{ github.sha }}
+          restore-keys: |
+            bazel-${{ hashFiles('TELEGRAM_COMMIT') }}-
+
+      - name: Build
+        run: |
+          cd tg
+          mkdir -p ../out
+          python3 build-system/Make/Make.py \
+            --overrideXcodeVersion \
+            --cacheDir="$HOME/telegram-bazel-cache" \
+            build \
+            --continueOnError \
+            --disableExtensions \
+            --configurationPath=build-system/teleflow-configuration.json \
+            --codesigningInformationPath=build-system/fake-codesigning \
+            --buildNumber=${{ github.run_number }} \
+            --configuration=release_arm64 \
+            --outputBuildArtifactsPath=../out 2>&1 | tee ../build.log
+          ls -la ../out
+
+      - name: Save Bazel cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ~/telegram-bazel-cache
+          key: bazel-${{ hashFiles('TELEGRAM_COMMIT') }}-${{ github.sha }}
+
+      - name: Package IPA
+        run: |
+          cp out/Telegram.ipa TeleFlow.ipa
+          ls -la TeleFlow.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TeleFlow-ipa
+          path: TeleFlow.ipa
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="build-${{ github.run_number }}"
+          gh release create "$TAG" TeleFlow.ipa --repo "${{ github.repository }}" --title "TeleFlow build ${{ github.run_number }}" --notes "Unsigned IPA. Install with ESign / Sideloadly / TrollStore."
+
+      - name: Save build log
+        if: always()
+        run: |
+          mkdir -p /tmp/logs
+          if [ -f build.log ]; then
+            tail -c 300000 build.log > /tmp/logs/build-log.txt
+            grep -n -E "error:|ERROR:|FAILED" build.log | head -400 > /tmp/logs/errors.txt || true
+          else
+            echo "no build log (failed before the build step)" > /tmp/logs/build-log.txt
+          fi
+          echo "${{ job.status }} run ${{ github.run_number }} sha ${{ github.sha }}" > /tmp/logs/status.txt
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git checkout -q --orphan build-logs
+          git rm -rq --cached . || true
+          cp /tmp/logs/* .
+          git add build-log.txt errors.txt status.txt 2>/dev/null || git add build-log.txt status.txt
+          git commit -qm "Build log ${{ github.run_number }} (${{ job.status }})"
+          git push -qf origin build-logs

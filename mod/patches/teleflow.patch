@@ -1,0 +1,260 @@
+diff --git a/submodules/TelegramCore/BUILD b/submodules/TelegramCore/BUILD
+index 23e4e285..0708bc04 100644
+--- a/submodules/TelegramCore/BUILD
++++ b/submodules/TelegramCore/BUILD
+@@ -18,6 +18,7 @@ swift_library(
+         "//submodules/WebProxyTransport:WebProxyTransport",
+         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
+         "//submodules/Postbox:Postbox",
++        "//submodules/TeleFlow",
+         "//submodules/CloudData:CloudData",
+         "//submodules/EncryptionProvider:EncryptionProvider",
+         "//submodules/CryptoUtils:CryptoUtils",
+diff --git a/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift b/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
+index 7256668b..cd2a4c9c 100644
+--- a/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
++++ b/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
+@@ -1,4 +1,5 @@
+ import Foundation
++internal import TeleFlow
+ internal import TelegramApi
+ import Postbox
+ import SwiftSignalKit
+@@ -42,7 +43,9 @@ private final class AccountPresenceManagerImpl {
+         self.onlineTimer?.invalidate()
+     }
+     
+-    private func updatePresence(_ isOnline: Bool) {
++    private func updatePresence(_ isOnlineValue: Bool) {
++        // TeleFlow ghost: always report offline
++        let isOnline = isOnlineValue && !TeleFlowSettings.shared.ghostHideOnline
+         let request: Signal<Api.Bool, MTRpcError>
+         if isOnline {
+             let timer = SignalKitTimer(timeout: 30.0, repeat: false, completion: { [weak self] in
+diff --git a/submodules/TelegramCore/Sources/State/ManagedLocalInputActivities.swift b/submodules/TelegramCore/Sources/State/ManagedLocalInputActivities.swift
+index e8e08874..d5d0126a 100644
+--- a/submodules/TelegramCore/Sources/State/ManagedLocalInputActivities.swift
++++ b/submodules/TelegramCore/Sources/State/ManagedLocalInputActivities.swift
+@@ -1,4 +1,5 @@
+ import Foundation
++internal import TeleFlow
+ import Postbox
+ import SwiftSignalKit
+ internal import TelegramApi
+@@ -142,6 +143,13 @@ private func actionFromActivity(_ activity: PeerInputActivity?) -> Api.SendMessa
+ }
+ 
+ private func requestActivity(postbox: Postbox, network: Network, accountPeerId: PeerId, peerId: PeerId, threadId: Int64?, activity: PeerInputActivity?) -> Signal<Void, NoError> {
++    // TeleFlow ghost: don't tell anyone we're typing
++    if TeleFlowSettings.shared.ghostHideTyping {
++        if let activity = activity, case .speakingInGroupCall = activity {
++        } else {
++            return .complete()
++        }
++    }
+     return postbox.transaction { transaction -> Signal<Void, NoError> in
+         if let peer = transaction.getPeer(peerId) {
+             if peerId == accountPeerId {
+diff --git a/submodules/TelegramCore/Sources/State/Sync/StateReplay+Messages.swift b/submodules/TelegramCore/Sources/State/Sync/StateReplay+Messages.swift
+index cf1ab15d..bef5f044 100644
+--- a/submodules/TelegramCore/Sources/State/Sync/StateReplay+Messages.swift
++++ b/submodules/TelegramCore/Sources/State/Sync/StateReplay+Messages.swift
+@@ -1,4 +1,5 @@
+ import Foundation
++internal import TeleFlow
+ import Postbox
+ import SwiftSignalKit
+ internal import TelegramApi
+@@ -273,7 +274,19 @@ extension ReplayContext {
+         deleteEphemeralMessages(transaction: transaction, peerId: peerId, ids: ids)
+     }
+     
+-    func applyDeleteMessagesWithGlobalIds(_ ids: [Int32]) {
++    func applyDeleteMessagesWithGlobalIds(_ globalIds: [Int32]) {
++        // TeleFlow: keep messages deleted by the other side
++        var ids: [Int32] = []
++        for globalId in globalIds {
++            if let messageId = transaction.messageIdsForGlobalIds([globalId]).first, teleFlowShouldKeepDeleted(transaction: transaction, messageId: messageId) {
++                TeleFlowDeletedStore.shared.markDeleted(peerId: messageId.peerId.toInt64(), namespace: messageId.namespace, id: messageId.id)
++            } else {
++                ids.append(globalId)
++            }
++        }
++        if ids.isEmpty {
++            return
++        }
+         var resourceIds: [MediaResourceId] = []
+         transaction.deleteMessagesWithGlobalIds(ids, forEachMedia: { media in
+             addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
+@@ -284,7 +297,19 @@ extension ReplayContext {
+         deletedMessageIds.append(contentsOf: ids.map { .global($0) })
+     }
+     
+-    func applyDeleteMessages(_ ids: [MessageId]) {
++    func applyDeleteMessages(_ allIds: [MessageId]) {
++        // TeleFlow: keep messages deleted by the other side
++        var ids: [MessageId] = []
++        for messageId in allIds {
++            if teleFlowShouldKeepDeleted(transaction: transaction, messageId: messageId) {
++                TeleFlowDeletedStore.shared.markDeleted(peerId: messageId.peerId.toInt64(), namespace: messageId.namespace, id: messageId.id)
++            } else {
++                ids.append(messageId)
++            }
++        }
++        if ids.isEmpty {
++            return
++        }
+         _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: ids, manualAddMessageThreadStatsDifference: { id, add, remove in
+             self.addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
+         })
+@@ -528,3 +553,35 @@ extension ReplayContext {
+         reportMessageDelivery = Set(messageIds)
+     }
+ }
++
++
++// MARK: - TeleFlow
++
++private func teleFlowShouldKeepDeleted(transaction: Transaction, messageId: MessageId) -> Bool {
++    let settings = TeleFlowSettings.shared
++    if !settings.saveDeletedMessages {
++        return false
++    }
++    guard let message = transaction.getMessage(messageId) else {
++        return false
++    }
++    // Our own messages that we deleted ourselves are already gone locally; anything still here was deleted elsewhere.
++    if message.flags.contains(.Incoming) == false && messageId.peerId.namespace != Namespaces.Peer.CloudUser {
++        return false
++    }
++    let kind: TeleFlowChatKind
++    if messageId.peerId.namespace == Namespaces.Peer.SecretChat {
++        kind = .secret
++    } else if let user = transaction.getPeer(messageId.peerId) as? TelegramUser {
++        kind = user.botInfo != nil ? .bot : .privateChat
++    } else if let channel = transaction.getPeer(messageId.peerId) as? TelegramChannel {
++        if case .broadcast = channel.info {
++            kind = .channel
++        } else {
++            kind = .group
++        }
++    } else {
++        kind = .group
++    }
++    return settings.shouldKeepDeletedMessages(in: kind)
++}
+diff --git a/submodules/TelegramUI/BUILD b/submodules/TelegramUI/BUILD
+index 116004c3..ff38dcd9 100644
+--- a/submodules/TelegramUI/BUILD
++++ b/submodules/TelegramUI/BUILD
+@@ -272,6 +272,8 @@ swift_library(
+         "//submodules/Components/ReactionListContextMenuContent:ReactionListContextMenuContent",
+         "//submodules/Components/ReactionImageComponent:ReactionImageComponent",
+         "//submodules/TabBarUI:TabBarUI",
++        "//submodules/TelegramUI/Components/TabBarComponent",
++        "//submodules/TeleFlow",
+         "//submodules/SoftwareVideo:SoftwareVideo",
+         "//submodules/ManagedFile:ManagedFile",
+         "//submodules/FetchManagerImpl:FetchManagerImpl",
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/BUILD b/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/BUILD
+index 7324e756..b69a8975 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/BUILD
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/BUILD
+@@ -14,6 +14,7 @@ swift_library(
+     deps = [
+         "//submodules/AsyncDisplayKit",
+         "//submodules/TelegramCore",
++        "//submodules/TeleFlow",
+         "//submodules/Display",
+         "//submodules/SSignalKit/SwiftSignalKit",
+         "//submodules/TelegramUIPreferences",
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift b/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift
+index bf71cb20..b9a23f8c 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift
+@@ -1,4 +1,5 @@
+ import Foundation
++import TeleFlow
+ import TelegramCore
+ import TelegramPresentationData
+ import TelegramUIPreferences
+@@ -126,6 +127,24 @@ public func stringForMessageTimestampStatus(
+     format: MessageTimestampStatusFormat = .regular,
+     associatedData: ChatMessageItemAssociatedData,
+     ignoreAuthor: Bool = false
++) -> String {
++    let result = teleFlowOriginalStringForMessageTimestampStatus(context: context, message: message, dateTimeFormat: dateTimeFormat, nameDisplayOrder: nameDisplayOrder, strings: strings, format: format, associatedData: associatedData, ignoreAuthor: ignoreAuthor)
++    // TeleFlow: mark messages deleted by the other side
++    if TeleFlowDeletedStore.shared.isDeleted(peerId: message.id.peerId.toInt64(), namespace: message.id.namespace, id: message.id.id) {
++        return result + " " + TeleFlowSettings.shared.deletedIcon
++    }
++    return result
++}
++
++private func teleFlowOriginalStringForMessageTimestampStatus(
++    context: AccountContext,
++    message: EngineMessage,
++    dateTimeFormat: PresentationDateTimeFormat,
++    nameDisplayOrder: PresentationPersonNameOrder,
++    strings: PresentationStrings,
++    format: MessageTimestampStatusFormat = .regular,
++    associatedData: ChatMessageItemAssociatedData,
++    ignoreAuthor: Bool = false
+ ) -> String {
+     if let adAttribute = message.adAttribute {
+         switch adAttribute.messageType {
+diff --git a/submodules/TelegramUI/Components/TabBarComponent/Sources/TabBarComponent.swift b/submodules/TelegramUI/Components/TabBarComponent/Sources/TabBarComponent.swift
+index 523cfcd0..7bc103b7 100644
+--- a/submodules/TelegramUI/Components/TabBarComponent/Sources/TabBarComponent.swift
++++ b/submodules/TelegramUI/Components/TabBarComponent/Sources/TabBarComponent.swift
+@@ -348,6 +348,9 @@ private final class TabBarBadgeView: UIView {
+ }
+ 
+ public final class TabBarComponent: Component {
++    /// TeleFlow: called with the UITabBarItem of every finished tap on a tab.
++    public static var teleFlowTapObserver: ((UITabBarItem) -> Void)?
++
+     public final class Item: Equatable {
+         public enum Content: Equatable {
+             public struct CustomItem: Equatable {
+@@ -733,6 +736,9 @@ public final class TabBarComponent: Component {
+                         guard let item = component.items.first(where: { $0.id == selectionGestureState.itemId }) else {
+                             return
+                         }
++                        if case let .tabBarItem(tappedTabBarItem) = item.content {
++                            TabBarComponent.teleFlowTapObserver?(tappedTabBarItem)
++                        }
+                         
+                         var handledDoubleTap = false
+                         if let pendingDoubleTapItemValue = self.pendingDoubleTapItem {
+diff --git a/submodules/TelegramUI/Sources/TelegramRootController.swift b/submodules/TelegramUI/Sources/TelegramRootController.swift
+index 6a071291..56bcc358 100644
+--- a/submodules/TelegramUI/Sources/TelegramRootController.swift
++++ b/submodules/TelegramUI/Sources/TelegramRootController.swift
+@@ -14,6 +14,8 @@ import AppBundle
+ import DatePickerNode
+ import DebugSettingsUI
+ import TabBarUI
++import TabBarComponent
++import TeleFlow
+ import WallpaperBackgroundNode
+ import ChatPresentationInterfaceState
+ import CameraScreen
+@@ -250,6 +252,17 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
+         self.accountSettingsController = accountSettingsController
+         self.rootTabController = tabBarController
+         self.pushViewController(tabBarController, animated: false)
++
++        TabBarComponent.teleFlowTapObserver = { [weak self] tabBarItem in
++            guard let self, let chatListController = self.chatListController else {
++                return
++            }
++            if tabBarItem === chatListController.tabBarItem {
++                if TeleFlowTapCounter.shared.registerTap() {
++                    TeleFlowMenu.present(from: self.view)
++                }
++            }
++        }
+     }
+         
+     public func updateRootControllers(showCallsTab: Bool, showNewsTab: Bool) {
