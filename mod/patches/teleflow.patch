@@ -293,6 +293,32 @@ index 523cfcd0..7bc103b7 100644
                          
                          var handledDoubleTap = false
                          if let pendingDoubleTapItemValue = self.pendingDoubleTapItem {
+diff --git a/submodules/TelegramUI/Sources/AppDelegate.swift b/submodules/TelegramUI/Sources/AppDelegate.swift
+index cf304286..f41d0892 100644
+--- a/submodules/TelegramUI/Sources/AppDelegate.swift
++++ b/submodules/TelegramUI/Sources/AppDelegate.swift
+@@ -691,9 +691,18 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+             networkEngineFactory: RustNetworkEngineFactory()
+         )
+         
+-        guard let appGroupUrl = maybeAppGroupUrl else {
+-            self.mainWindow?.presentNative(UIAlertController(title: nil, message: "Error 2", preferredStyle: .alert))
+-            return true
++        // TeleFlow: when sideloaded, the app group entitlement is often stripped and the
++        // shared container is nil. Instead of bailing with a black screen, fall back to the
++        // app's own sandbox so the app still launches (data is kept locally, not shared with
++        // extensions/widgets).
++        let appGroupUrl: URL
++        if let maybeAppGroupUrl = maybeAppGroupUrl {
++            appGroupUrl = maybeAppGroupUrl
++        } else {
++            let fallbackBase = NSSearchPathForDirectoriesInDomains(.applicationSupportDirectory, .userDomainMask, true).first ?? NSTemporaryDirectory()
++            let fallbackUrl = URL(fileURLWithPath: fallbackBase).appendingPathComponent("TeleFlowSharedContainer")
++            try? FileManager.default.createDirectory(at: fallbackUrl, withIntermediateDirectories: true, attributes: nil)
++            appGroupUrl = fallbackUrl
+         }
+         
+         var isDebugConfiguration = false
 diff --git a/submodules/TelegramUI/Sources/TelegramRootController.swift b/submodules/TelegramUI/Sources/TelegramRootController.swift
 index 6a071291..56bcc358 100644
 --- a/submodules/TelegramUI/Sources/TelegramRootController.swift
