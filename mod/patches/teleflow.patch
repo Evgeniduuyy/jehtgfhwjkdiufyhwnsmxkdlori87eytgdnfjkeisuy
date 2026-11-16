@@ -237,6 +237,49 @@ index b2e65895..76bbbb84 100644
                      |> map(Optional.init)
                      |> `catch` { _ -> Signal<Api.messages.AffectedMessages?, NoError> in
                          return .single(nil)
+diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift b/submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift
+index a8e5b04b..73d8b765 100644
+--- a/submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift
++++ b/submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift
+@@ -1,4 +1,5 @@
+ import Foundation
++internal import TeleFlow
+ import Postbox
+ import SwiftSignalKit
+ internal import TelegramApi
+@@ -494,6 +495,10 @@ private class AdMessagesHistoryContextImpl {
+             guard let inputPeer else {
+                 return .single((nil, nil, nil, []))
+             }
++            // TeleFlow: hide sponsored messages / channel ads
++            if TeleFlowSettings.shared.hideSponsoredMessages {
++                return .single((nil, nil, nil, []))
++            }
+             var flags: Int32 = 0
+             if let _ = messageId {
+                 flags |= (1 << 0)
+diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Payments/Stars.swift b/submodules/TelegramCore/Sources/TelegramEngine/Payments/Stars.swift
+index cb4f4f2a..a34f1c68 100644
+--- a/submodules/TelegramCore/Sources/TelegramEngine/Payments/Stars.swift
++++ b/submodules/TelegramCore/Sources/TelegramEngine/Payments/Stars.swift
+@@ -1,4 +1,5 @@
+ import Foundation
++internal import TeleFlow
+ import Postbox
+ import MtProtoKit
+ import SwiftSignalKit
+@@ -642,6 +643,11 @@ private final class StarsContextImpl {
+     }
+     
+     private func updateState(_ state: StarsContext.State) {
++        var state = state
++        // TeleFlow: local stars — visually override the displayed balance only.
++        if TeleFlowSettings.shared.localStarsEnabled {
++            state.balance = StarsAmount(value: TeleFlowSettings.shared.localStarsValue, nanos: 0)
++        }
+         self._state = state
+         self._statePromise.set(.single(state))
+     }
 diff --git a/submodules/TelegramUI/BUILD b/submodules/TelegramUI/BUILD
 index 116004c3..ff38dcd9 100644
 --- a/submodules/TelegramUI/BUILD
@@ -348,7 +391,7 @@ index cf304286..f41d0892 100644
          
          var isDebugConfiguration = false
 diff --git a/submodules/TelegramUI/Sources/TelegramRootController.swift b/submodules/TelegramUI/Sources/TelegramRootController.swift
-index 6a071291..56bcc358 100644
+index 6a071291..b67a0b6c 100644
 --- a/submodules/TelegramUI/Sources/TelegramRootController.swift
 +++ b/submodules/TelegramUI/Sources/TelegramRootController.swift
 @@ -14,6 +14,8 @@ import AppBundle
@@ -360,10 +403,12 @@ index 6a071291..56bcc358 100644
  import WallpaperBackgroundNode
  import ChatPresentationInterfaceState
  import CameraScreen
-@@ -250,6 +252,17 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
+@@ -250,6 +252,19 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
          self.accountSettingsController = accountSettingsController
          self.rootTabController = tabBarController
          self.pushViewController(tabBarController, animated: false)
++
++        TeleFlowSettings.shared.accountId = self.context.account.peerId.id._internalGetInt64Value()
 +
 +        TabBarComponent.teleFlowTapObserver = { [weak self] tabBarItem in
 +            guard let self, let chatListController = self.chatListController else {

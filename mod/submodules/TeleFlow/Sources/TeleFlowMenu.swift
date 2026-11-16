@@ -176,6 +176,14 @@ public enum TeleFlowMenu {
                         return "\(TeleFlowDeletedStore.shared.count)"
                     }, action: { controller in
                         controller.navigationController?.pushViewController(TeleFlowMenu.makeDeletedController(), animated: true)
+                    })),
+                    TeleFlowRow(title: "Другое", kind: .link(icon: "slider.horizontal.3", color: .systemGray, value: { nil }, action: { controller in
+                        controller.navigationController?.pushViewController(TeleFlowMenu.makeOtherController(), animated: true)
+                    })),
+                    TeleFlowRow(title: "Локальные звёзды", kind: .link(icon: "star.fill", color: .systemYellow, value: {
+                        return TeleFlowSettings.shared.localStarsEnabled ? "\(TeleFlowSettings.shared.localStarsValue)" : nil
+                    }, action: { controller in
+                        controller.navigationController?.pushViewController(TeleFlowMenu.makeLocalStarsController(), animated: true)
                     }))
                 ])
             ]
@@ -251,6 +259,53 @@ public enum TeleFlowMenu {
                     TeleFlowRow(title: "Скрыть «в сети»", kind: .toggle(icon: "eye.slash.fill", color: .systemIndigo, get: { settings.ghostHideOnline }, set: { settings.ghostHideOnline = $0 })),
                     TeleFlowRow(title: "Скрыть «печатает»", kind: .toggle(icon: "keyboard.fill", color: .systemPurple, get: { settings.ghostHideTyping }, set: { settings.ghostHideTyping = $0 })),
                     TeleFlowRow(title: "Не отправлять прочтение", kind: .toggle(icon: "checkmark.message.fill", color: .systemTeal, get: { settings.ghostHideReadReceipts }, set: { settings.ghostHideReadReceipts = $0 }))
+                ])
+            ]
+        })
+    }
+
+    static func makeOtherController() -> UIViewController {
+        let settings = TeleFlowSettings.shared
+        return TeleFlowListController(title: "Другое", sections: {
+            return [
+                TeleFlowSection(header: "Отображение информации", footer: "ID аккаунта — твой числовой идентификатор в Telegram.", rows: [
+                    TeleFlowRow(title: "ID аккаунта", kind: .link(icon: "number", color: .systemBlue, value: {
+                        let id = TeleFlowSettings.shared.accountId
+                        return id != 0 ? "\(id)" : "—"
+                    }, action: { _ in
+                        UIPasteboard.general.string = "\(TeleFlowSettings.shared.accountId)"
+                    }))
+                ]),
+                TeleFlowSection(header: "Реклама", footer: "Спонсорские сообщения в каналах и в поиске не показываются.", rows: [
+                    TeleFlowRow(title: "Убрать рекламу в каналах", kind: .toggle(icon: "megaphone.fill", color: .systemRed, get: { settings.hideSponsoredMessages }, set: { settings.hideSponsoredMessages = $0 }))
+                ])
+            ]
+        })
+    }
+
+    static func makeLocalStarsController() -> UIViewController {
+        let settings = TeleFlowSettings.shared
+        return TeleFlowListController(title: "Локальные звёзды", sections: {
+            return [
+                TeleFlowSection(header: "Звёзды Telegram", footer: "Локально подменяет отображаемый баланс звёзд. На реальный баланс и покупки не влияет.", rows: [
+                    TeleFlowRow(title: "Изменить баланс звёзд", kind: .toggle(icon: "star.fill", color: .systemYellow, get: { settings.localStarsEnabled }, set: { settings.localStarsEnabled = $0 })),
+                    TeleFlowRow(title: "Значение баланса", kind: .link(icon: nil, color: nil, value: {
+                        return "\(settings.localStarsValue)"
+                    }, action: { controller in
+                        let alert = UIAlertController(title: "Баланс звёзд", message: "Введи число, которое будет показано", preferredStyle: .alert)
+                        alert.addTextField { tf in
+                            tf.keyboardType = .numberPad
+                            tf.text = "\(settings.localStarsValue)"
+                        }
+                        alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+                        alert.addAction(UIAlertAction(title: "Готово", style: .default, handler: { [weak alert, weak controller] _ in
+                            if let text = alert?.textFields?.first?.text, let value = Int64(text) {
+                                settings.localStarsValue = value
+                            }
+                            (controller as? TeleFlowListController)?.reload()
+                        }))
+                        controller.present(alert, animated: true)
+                    }))
                 ])
             ]
         })

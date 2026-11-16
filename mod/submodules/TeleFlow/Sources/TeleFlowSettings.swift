@@ -18,9 +18,15 @@ public final class TeleFlowSettings {
             self.prefix + "deletedExcludeBots": false,
             self.prefix + "ghostHideOnline": false,
             self.prefix + "ghostHideTyping": false,
-            self.prefix + "ghostHideReadReceipts": false
+            self.prefix + "ghostHideReadReceipts": false,
+            self.prefix + "hideSponsoredMessages": false,
+            self.prefix + "localStarsEnabled": false,
+            self.prefix + "localStarsValue": 0
         ])
     }
+
+    /// The current account's numeric id, published by the app on launch so the menu can show it.
+    public var accountId: Int64 = 0
 
     private func bool(_ key: String) -> Bool {
         return self.defaults.bool(forKey: self.prefix + key)
@@ -77,6 +83,30 @@ public final class TeleFlowSettings {
     public var ghostHideReadReceipts: Bool {
         get { return self.bool("ghostHideReadReceipts") }
         set { self.setBool("ghostHideReadReceipts", newValue) }
+    }
+
+    // MARK: Other
+
+    public var hideSponsoredMessages: Bool {
+        get { return self.bool("hideSponsoredMessages") }
+        set { self.setBool("hideSponsoredMessages", newValue) }
+    }
+
+    // MARK: Local stars (visual-only balance override)
+
+    public var localStarsEnabled: Bool {
+        get { return self.bool("localStarsEnabled") }
+        set { self.setBool("localStarsEnabled", newValue) }
+    }
+
+    public var localStarsValue: Int64 {
+        get { return Int64(self.defaults.integer(forKey: self.prefix + "localStarsValue")) }
+        set { self.defaults.set(Int(newValue), forKey: self.prefix + "localStarsValue") }
+    }
+
+    /// If the visual override is on, returns the value to display instead of the real balance.
+    public func overriddenStarsBalance(real: Int64) -> Int64 {
+        return self.localStarsEnabled ? self.localStarsValue : real
     }
 }
 
