@@ -122,7 +122,6 @@ jobs:
             --cacheDir="$HOME/telegram-bazel-cache" \
             build \
             --continueOnError \
-            --disableExtensions \
             --configurationPath=build-system/teleflow-configuration.json \
             --codesigningInformationPath=build-system/fake-codesigning \
             --buildNumber=${{ github.run_number }} \
