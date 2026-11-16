@@ -96,7 +96,7 @@ jobs:
               api_id = keys["api_id"]
               api_hash = keys["api_hash"]
           config = {
-              "bundle_id": "ph.telegra.Telegraph",
+              "bundle_id": "com.kinopoiskgram.app",
               "api_id": api_id,
               "api_hash": api_hash,
               "team_id": "C67CF9S4VU",
