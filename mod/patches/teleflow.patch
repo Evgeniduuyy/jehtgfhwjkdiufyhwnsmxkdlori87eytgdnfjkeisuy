@@ -210,16 +210,18 @@ index cf1ab15d..bef5f044 100644
 +    return settings.shouldKeepDeletedMessages(in: kind)
 +}
 diff --git a/submodules/TelegramCore/Sources/State/SynchronizePeerReadState.swift b/submodules/TelegramCore/Sources/State/SynchronizePeerReadState.swift
-index b2e65895..76bbbb84 100644
+index b2e65895..fcaa7d34 100644
 --- a/submodules/TelegramCore/Sources/State/SynchronizePeerReadState.swift
 +++ b/submodules/TelegramCore/Sources/State/SynchronizePeerReadState.swift
-@@ -1,4 +1,5 @@
+@@ -1,5 +1,7 @@
  import Foundation
 +internal import TeleFlow
  import Postbox
++import MtProtoKit
  internal import TelegramApi
  import SwiftSignalKit
-@@ -290,7 +291,7 @@ private func pushPeerReadState(network: Network, postbox: Postbox, stateManager:
+ 
+@@ -290,7 +292,7 @@ private func pushPeerReadState(network: Network, postbox: Postbox, stateManager:
                  let (channelId, accessHash) = (inputPeerChannelData.channelId, inputPeerChannelData.accessHash)
                  switch readState {
                  case let .idBased(maxIncomingReadId, _, _, _, markedUnread):
@@ -228,7 +230,7 @@ index b2e65895..76bbbb84 100644
                      |> `catch` { _ -> Signal<Api.Bool, NoError> in
                          return .complete()
                      }
-@@ -320,7 +321,7 @@ private func pushPeerReadState(network: Network, postbox: Postbox, stateManager:
+@@ -320,7 +322,7 @@ private func pushPeerReadState(network: Network, postbox: Postbox, stateManager:
              default:
                  switch readState {
                  case let .idBased(maxIncomingReadId, _, _, _, markedUnread):
