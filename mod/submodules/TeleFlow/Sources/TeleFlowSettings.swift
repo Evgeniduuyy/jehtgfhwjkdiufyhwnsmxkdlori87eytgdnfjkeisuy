@@ -17,7 +17,8 @@ public final class TeleFlowSettings {
             self.prefix + "deletedExcludeChannels": false,
             self.prefix + "deletedExcludeBots": false,
             self.prefix + "ghostHideOnline": false,
-            self.prefix + "ghostHideTyping": false
+            self.prefix + "ghostHideTyping": false,
+            self.prefix + "ghostHideReadReceipts": false
         ])
     }
 
@@ -71,6 +72,11 @@ public final class TeleFlowSettings {
     public var ghostHideTyping: Bool {
         get { return self.bool("ghostHideTyping") }
         set { self.setBool("ghostHideTyping", newValue) }
+    }
+
+    public var ghostHideReadReceipts: Bool {
+        get { return self.bool("ghostHideReadReceipts") }
+        set { self.setBool("ghostHideReadReceipts", newValue) }
     }
 }
 

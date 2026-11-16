@@ -163,7 +163,7 @@ final class TeleFlowListController: UITableViewController {
 
 public enum TeleFlowMenu {
     public static func makeController() -> UIViewController {
-        let root = TeleFlowListController(title: "TeleFlow", sections: {
+        let root = TeleFlowListController(title: "KinopoiskGram", sections: {
             return [
                 TeleFlowSection(rows: [
                     TeleFlowRow(title: "Сообщения и история", kind: .link(icon: "envelope.fill", color: .systemBlue, value: { nil }, action: { controller in
@@ -249,7 +249,8 @@ public enum TeleFlowMenu {
             return [
                 TeleFlowSection(header: "Ghost", footer: "«Скрыть в сети» — для всех ты будешь не в сети, даже когда пользуешься приложением. «Скрыть печатает» — собеседник не увидит, что ты набираешь сообщение.", rows: [
                     TeleFlowRow(title: "Скрыть «в сети»", kind: .toggle(icon: "eye.slash.fill", color: .systemIndigo, get: { settings.ghostHideOnline }, set: { settings.ghostHideOnline = $0 })),
-                    TeleFlowRow(title: "Скрыть «печатает»", kind: .toggle(icon: "keyboard.fill", color: .systemPurple, get: { settings.ghostHideTyping }, set: { settings.ghostHideTyping = $0 }))
+                    TeleFlowRow(title: "Скрыть «печатает»", kind: .toggle(icon: "keyboard.fill", color: .systemPurple, get: { settings.ghostHideTyping }, set: { settings.ghostHideTyping = $0 })),
+                    TeleFlowRow(title: "Не отправлять прочтение", kind: .toggle(icon: "checkmark.message.fill", color: .systemTeal, get: { settings.ghostHideReadReceipts }, set: { settings.ghostHideReadReceipts = $0 }))
                 ])
             ]
         })
