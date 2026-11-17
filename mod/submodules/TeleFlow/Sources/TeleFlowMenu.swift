@@ -583,7 +583,7 @@ public enum TeleFlowMenu {
         let confirm = UIAlertController(title: "\(gift.emoji) \(gift.name)", message: "Купить за 🔥 \(gift.priceGram) gram? Подарок появится в визуальной витрине мода.", preferredStyle: .alert)
         confirm.addAction(UIAlertAction(title: "Купить", style: .default, handler: { _ in
             settings.addLocalGram(-gift.priceGram)
-            TeleFlowGiftStore.shared.add(gift)
+            _ = TeleFlowGiftStore.shared.add(gift)
             controller.navigationController?.pushViewController(TeleFlowMenu.makeShowcaseController(), animated: true)
         }))
         confirm.addAction(UIAlertAction(title: "Отмена", style: .cancel))
@@ -676,7 +676,7 @@ public enum TeleFlowMenu {
                 TeleFlowGiftStore.shared.remove(uid: other.uid)
                 let price = max(10, (gift.priceGram + other.priceGram) / 2 + 20)
                 let crafted = TeleFlowShowcaseGift(uid: "crafted." + String(UUID().uuidString.prefix(6)), name: "\(gift.name) + \(other.name)", emoji: "🎁", priceGram: price, upgraded: false, crafted: true)
-                TeleFlowGiftStore.shared.add(crafted)
+                _ = TeleFlowGiftStore.shared.add(crafted)
                 (controller as? TeleFlowListController)?.reload()
             }))
         }
