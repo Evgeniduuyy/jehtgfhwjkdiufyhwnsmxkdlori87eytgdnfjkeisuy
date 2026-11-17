@@ -377,7 +377,7 @@ public enum TeleFlowMenu {
     }
 
     private static func makeStreamRow(title: String, keyPath: WritableKeyPath<TeleFlowSettings, Int>) -> TeleFlowRow {
-        let settings = TeleFlowSettings.shared
+        var settings = TeleFlowSettings.shared
         return TeleFlowRow(title: title, kind: .link(icon: "arrow.up.arrow.down", color: .systemBlue, value: {
             let value = settings[keyPath: keyPath]
             return value == 0 ? "По умолчанию" : "\(value)"

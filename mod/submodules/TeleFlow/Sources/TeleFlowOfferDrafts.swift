@@ -282,7 +282,9 @@ extension TeleFlowMenu {
             guard link.lowercased().hasPrefix("https://t.me/nft/"), URL(string: link) != nil else {
                 let error = UIAlertController(title: "Неверная NFT-ссылка", message: "Разрешена только официальная ссылка https://t.me/nft/…", preferredStyle: .alert)
                 error.addAction(UIAlertAction(title: "Повторить", style: .default, handler: { _ in
-                    TeleFlowMenu.askOfferNFTLink(recipient: recipient, controller: controller)
+                    if let controller = controller {
+                        TeleFlowMenu.askOfferNFTLink(recipient: recipient, controller: controller)
+                    }
                 }))
                 error.addAction(UIAlertAction(title: "Отмена", style: .cancel))
                 controller?.present(error, animated: true)
@@ -312,15 +314,21 @@ extension TeleFlowMenu {
                     TeleFlowMenu.showOfferAmountError(recipient: recipient, nftLink: nftLink, controller: controller)
                     return
                 }
-                TeleFlowMenu.askOfferLanguage(recipient: recipient, nftLink: nftLink, amount: amount, currency: .gram, controller: controller)
+                if let controller = controller {
+                    TeleFlowMenu.askOfferLanguage(recipient: recipient, nftLink: nftLink, amount: amount, currency: .gram, controller: controller)
+                }
                 return
             }
             let currencyAlert = UIAlertController(title: "Валюта черновика", message: "Выбери внутренние игровые единицы. Это не Telegram Stars.", preferredStyle: .actionSheet)
             currencyAlert.addAction(UIAlertAction(title: "Граммы", style: .default, handler: { _ in
-                TeleFlowMenu.askOfferLanguage(recipient: recipient, nftLink: nftLink, amount: amount, currency: .gram, controller: controller)
+                if let controller = controller {
+                    TeleFlowMenu.askOfferLanguage(recipient: recipient, nftLink: nftLink, amount: amount, currency: .gram, controller: controller)
+                }
             }))
             currencyAlert.addAction(UIAlertAction(title: "Звёзды", style: .default, handler: { _ in
-                TeleFlowMenu.askOfferLanguage(recipient: recipient, nftLink: nftLink, amount: amount, currency: .stars, controller: controller)
+                if let controller = controller {
+                    TeleFlowMenu.askOfferLanguage(recipient: recipient, nftLink: nftLink, amount: amount, currency: .stars, controller: controller)
+                }
             }))
             currencyAlert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
             controller?.present(currencyAlert, animated: true)
