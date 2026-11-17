@@ -11,7 +11,7 @@ index bd33bb7..d18435b 100644
      visibility = [
          "//visibility:public",
 diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift
-index 7751e79..73ca87a 100644
+index 7751e79..feac3e5 100644
 --- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift
 +++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift
 @@ -28,6 +28,7 @@ import MultiAnimationRenderer
@@ -22,7 +22,7 @@ index 7751e79..73ca87a 100644
  import AvatarVideoNode
  import PeerInfoVisualMediaPaneNode
  import AvatarStoryIndicatorComponent
-@@ -156,6 +157,12 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -156,6 +157,15 @@ final class PeerInfoHeaderNode: ASDisplayNode {
      var subtitleBackgroundButton: HighlightTrackingButtonNode?
      var subtitleArrowNode: ASImageNode?
      var subtitleBadgeView: PeerInfoSubtitleBadgeView?
@@ -32,10 +32,13 @@ index 7751e79..73ca87a 100644
 +    /// TeleFlow: the local gram balance pill shown in your own profile.
 +    var teleFlowGramView: TeleFlowBadgeView?
 +    var teleFlowGramSize: CGSize?
++    /// TeleFlow: local visual gifts pinned to your profile or sent to this peer.
++    var teleFlowGiftsView: TeleFlowBadgeView?
++    var teleFlowGiftsSize: CGSize?
      let panelSubtitleNode: MultiScaleTextNode
      let usernameNodeContainer: ASDisplayNode
      let usernameNodeRawContainer: ASDisplayNode
-@@ -201,6 +208,12 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -201,6 +211,15 @@ final class PeerInfoHeaderNode: ASDisplayNode {
          if let view = self.subtitleBadgeView {
              views.append(view)
          }
@@ -45,10 +48,13 @@ index 7751e79..73ca87a 100644
 +        if let view = self.teleFlowGramView {
 +            views.append(view)
 +        }
++        if let view = self.teleFlowGiftsView {
++            views.append(view)
++        }
          if let view = self.subtitleRating?.view {
              views.append(view)
          }
-@@ -1259,7 +1272,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -1259,7 +1278,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
          let titleStringText: String
          let smallTitleAttributes: MultiScaleTextState.Attributes
          let titleAttributes: MultiScaleTextState.Attributes
@@ -57,7 +63,7 @@ index 7751e79..73ca87a 100644
          var subtitleAttributedText: NSAttributedString?
          let smallSubtitleAttributes: MultiScaleTextState.Attributes
          let subtitleAttributes: MultiScaleTextState.Attributes
-@@ -1433,6 +1446,14 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -1433,6 +1452,14 @@ final class PeerInfoHeaderNode: ASDisplayNode {
              usernameString = ("", MultiScaleTextState.Attributes(font: Font.regular(16.0), color: .white))
          }
          
@@ -72,7 +78,7 @@ index 7751e79..73ca87a 100644
          let textSideInset: CGFloat = 36.0
          let expandedAvatarHeight: CGFloat = expandedAvatarListSize.height
          
-@@ -1694,6 +1715,47 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -1694,6 +1721,72 @@ final class PeerInfoHeaderNode: ASDisplayNode {
              subtitleBadgeView.removeFromSuperview()
          }
          
@@ -117,10 +123,35 @@ index 7751e79..73ca87a 100644
 +            teleFlowGramSize = nil
 +        }
 +        
++        // TeleFlow: visual-only gift emojis in the local profile header.
++        let teleFlowOwnProfile = self.isSettings || self.isMyProfile
++        var teleFlowGiftSummary = ""
++        if let peer = peer {
++            let teleFlowGiftPeerId = peer.id.id._internalGetInt64Value()
++            teleFlowGiftSummary = TeleFlowGiftStore.shared.profileGiftSummary(peerId: teleFlowGiftPeerId, isMyProfile: teleFlowOwnProfile)
++        } else if teleFlowOwnProfile {
++            teleFlowGiftSummary = TeleFlowGiftStore.shared.profileGiftSummary(peerId: TeleFlowSettings.shared.accountId, isMyProfile: true)
++        }
++        if !teleFlowGiftSummary.isEmpty {
++            let teleFlowGiftsView: TeleFlowBadgeView
++            if let current = self.teleFlowGiftsView {
++                teleFlowGiftsView = current
++            } else {
++                teleFlowGiftsView = TeleFlowBadgeView()
++                self.teleFlowGiftsView = teleFlowGiftsView
++                self.subtitleNodeContainer.view.addSubview(teleFlowGiftsView)
++            }
++            teleFlowGiftsSize = teleFlowGiftsView.update(text: teleFlowGiftSummary, icon: .gift)
++        } else if let teleFlowGiftsView = self.teleFlowGiftsView {
++            teleFlowGiftsView.removeFromSuperview()
++            self.teleFlowGiftsView = nil
++            teleFlowGiftsSize = nil
++        }
++        
          var titleHorizontalOffset: CGFloat = 0.0
          var titleExpandedHorizontalOffset: CGFloat = 0.0
          var nextIconX: CGFloat = titleSize.width
-@@ -1811,6 +1873,12 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -1811,6 +1904,15 @@ final class PeerInfoHeaderNode: ASDisplayNode {
              if let subtitleBadgeSize {
                  effectiveSubtitleWidth += (subtitleBadgeSize.width + 7.0) * (1.0 - titleCollapseFraction)
              }
@@ -130,10 +161,13 @@ index 7751e79..73ca87a 100644
 +            if let teleFlowGramSize {
 +                effectiveSubtitleWidth += (teleFlowGramSize.width + 8.0) * (1.0 - titleCollapseFraction)
 +            }
++            if let teleFlowGiftsSize {
++                effectiveSubtitleWidth += (teleFlowGiftsSize.width + 8.0) * (1.0 - titleCollapseFraction)
++            }
              
              let totalSubtitleWidth = effectiveSubtitleWidth + usernameSpacing + usernameSize.width
              if usernameSize.width == 0.0 {
-@@ -2170,6 +2238,29 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -2170,6 +2272,45 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                  transition.updateAlpha(layer: subtitleBadgeView.layer, alpha: subtitleBadgeFraction)
              }
              
@@ -158,6 +192,22 @@ index 7751e79..73ca87a 100644
 +                let teleFlowGramFrame = CGRect(origin: CGPoint(x: teleFlowGramX, y: floor((-teleFlowGramSize.height) * 0.5)), size: teleFlowGramSize)
 +                transition.updateFrameAdditive(view: teleFlowGramView, frame: teleFlowGramFrame)
 +                transition.updateAlpha(layer: teleFlowGramView.layer, alpha: subtitleBadgeFraction)
++            }
++            
++            if let teleFlowGiftsView = self.teleFlowGiftsView, let teleFlowGiftsSize {
++                var teleFlowGiftsX = (subtitleSize.width + 8.0) * 0.5
++                if let subtitleBadgeSize {
++                    teleFlowGiftsX += subtitleBadgeSize.width + 8.0
++                }
++                if let teleFlowBadgeSize {
++                    teleFlowGiftsX += teleFlowBadgeSize.width + 8.0
++                }
++                if let teleFlowGramSize {
++                    teleFlowGiftsX += teleFlowGramSize.width + 8.0
++                }
++                let teleFlowGiftsFrame = CGRect(origin: CGPoint(x: teleFlowGiftsX, y: floor((-teleFlowGiftsSize.height) * 0.5)), size: teleFlowGiftsSize)
++                transition.updateFrameAdditive(view: teleFlowGiftsView, frame: teleFlowGiftsFrame)
++                transition.updateAlpha(layer: teleFlowGiftsView.layer, alpha: subtitleBadgeFraction)
 +            }
 +            
              if let subtitleRatingView = self.subtitleRating?.view, let subtitleRatingSize {

@@ -12,6 +12,10 @@ public struct TeleFlowShowcaseGift: Codable, Equatable {
     public var crafted: Bool
     /// Marks the gift as "pinned" into the visual profile section of the showcase.
     public var inProfile: Bool
+    /// A user-added archived/delisted gift card, not a market purchase.
+    public var archived: Bool
+    public var nftLink: String
+    public var giftNumber: String
 
     enum CodingKeys: String, CodingKey {
         case uid
@@ -21,9 +25,12 @@ public struct TeleFlowShowcaseGift: Codable, Equatable {
         case upgraded
         case crafted
         case inProfile
+        case archived
+        case nftLink
+        case giftNumber
     }
 
-    public init(uid: String, name: String, emoji: String, priceGram: Int64, upgraded: Bool = false, crafted: Bool = false, inProfile: Bool = false) {
+    public init(uid: String, name: String, emoji: String, priceGram: Int64, upgraded: Bool = false, crafted: Bool = false, inProfile: Bool = false, archived: Bool = false, nftLink: String = "", giftNumber: String = "") {
         self.uid = uid
         self.name = name
         self.emoji = emoji
@@ -31,6 +38,9 @@ public struct TeleFlowShowcaseGift: Codable, Equatable {
         self.upgraded = upgraded
         self.crafted = crafted
         self.inProfile = inProfile
+        self.archived = archived
+        self.nftLink = nftLink
+        self.giftNumber = giftNumber
     }
 
     /// Tolerates showcases stored by older builds (without `inProfile`).
@@ -43,6 +53,9 @@ public struct TeleFlowShowcaseGift: Codable, Equatable {
         self.upgraded = try container.decodeIfPresent(Bool.self, forKey: .upgraded) ?? false
         self.crafted = try container.decodeIfPresent(Bool.self, forKey: .crafted) ?? false
         self.inProfile = try container.decodeIfPresent(Bool.self, forKey: .inProfile) ?? false
+        self.archived = try container.decodeIfPresent(Bool.self, forKey: .archived) ?? false
+        self.nftLink = try container.decodeIfPresent(String.self, forKey: .nftLink) ?? ""
+        self.giftNumber = try container.decodeIfPresent(String.self, forKey: .giftNumber) ?? ""
     }
 }
 
@@ -70,11 +83,44 @@ public struct TeleFlowTransferRecord: Codable, Equatable {
     }
 }
 
+public enum TeleFlowGramTransactionKind: String, Codable {
+    case topUp
+    case adjustment
+    case purchase
+    case gift
+    case transfer
+}
+
+/// One entry in the local gram balance history. A negative amount is a visual
+/// spend, a positive amount is a visual top-up. No real currency is involved.
+public struct TeleFlowGramTransaction: Codable, Equatable {
+    public let uid: String
+    public let kind: TeleFlowGramTransactionKind
+    public let title: String
+    public let recipientName: String
+    public let recipientId: Int64
+    public let amount: Int64
+    public let balanceAfter: Int64
+    public let date: TimeInterval
+
+    public init(uid: String, kind: TeleFlowGramTransactionKind, title: String, recipientName: String, recipientId: Int64, amount: Int64, balanceAfter: Int64, date: TimeInterval) {
+        self.uid = uid
+        self.kind = kind
+        self.title = title
+        self.recipientName = recipientName
+        self.recipientId = recipientId
+        self.amount = amount
+        self.balanceAfter = balanceAfter
+        self.date = date
+    }
+}
+
 public final class TeleFlowGiftStore {
     public static let shared = TeleFlowGiftStore()
 
     private let key = "teleflow.showcaseGifts"
     private let transfersKey = "teleflow.transfers"
+    private let transactionsKey = "teleflow.gramTransactions"
 
     private var gifts: [TeleFlowShowcaseGift] {
         get {
@@ -104,6 +150,20 @@ public final class TeleFlowGiftStore {
         }
     }
 
+    private var transactions: [TeleFlowGramTransaction] {
+        get {
+            if let data = UserDefaults.standard.data(forKey: self.transactionsKey), let decoded = try? JSONDecoder().decode([TeleFlowGramTransaction].self, from: data) {
+                return decoded
+            }
+            return []
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) {
+                UserDefaults.standard.set(data, forKey: self.transactionsKey)
+            }
+        }
+    }
+
     private init() {
     }
 
@@ -119,12 +179,38 @@ public final class TeleFlowGiftStore {
         return self.gifts.filter { $0.inProfile }
     }
 
+    /// A compact emoji summary for the local profile-header gift pill. Your own
+    /// profile shows pinned showcase gifts; another profile shows gifts visually
+    /// sent to that peer from this device.
+    public func profileGiftSummary(peerId: Int64, isMyProfile: Bool) -> String {
+        let emojis: [String]
+        if isMyProfile {
+            emojis = self.profileGifts.map { $0.emoji }
+        } else {
+            emojis = self.transfers.filter { !$0.isGram && $0.recipientId == peerId }.map { $0.emoji }
+        }
+        guard !emojis.isEmpty else {
+            return ""
+        }
+        let visible = emojis.prefix(3).joined()
+        let remaining = emojis.count - 3
+        return remaining > 0 ? visible + " +\(remaining)" : visible
+    }
+
     public var transferCount: Int {
         return self.transfers.count
     }
 
     public var allTransfers: [TeleFlowTransferRecord] {
-        return self.transfers
+        return Array(self.transfers.reversed())
+    }
+
+    public var transactionCount: Int {
+        return self.transactions.count
+    }
+
+    public var allTransactions: [TeleFlowGramTransaction] {
+        return Array(self.transactions.reversed())
     }
 
     /// The catalog shown in the market screen: classic Telegram collectible gift names
@@ -155,9 +241,38 @@ public final class TeleFlowGiftStore {
     public func add(_ catalogGift: TeleFlowShowcaseGift) -> Bool {
         var current = self.gifts
         let uid = catalogGift.uid + "." + String(UUID().uuidString.prefix(6))
-        current.append(TeleFlowShowcaseGift(uid: uid, name: catalogGift.name, emoji: catalogGift.emoji, priceGram: catalogGift.priceGram))
+        current.append(TeleFlowShowcaseGift(uid: uid, name: catalogGift.name, emoji: catalogGift.emoji, priceGram: catalogGift.priceGram, upgraded: catalogGift.upgraded, crafted: catalogGift.crafted, inProfile: catalogGift.inProfile, archived: catalogGift.archived, nftLink: catalogGift.nftLink, giftNumber: catalogGift.giftNumber))
         self.gifts = current
         return true
+    }
+
+    /// Adds a local card for a delisted or otherwise unavailable NFT gift. It is
+    /// immediately pinned to the visual profile and can be upgraded like other gifts.
+    @discardableResult
+    public func addArchived(name: String, emoji: String, nftLink: String, giftNumber: String) -> TeleFlowShowcaseGift {
+        let gift = TeleFlowShowcaseGift(
+            uid: "archived." + String(UUID().uuidString.prefix(8)),
+            name: name,
+            emoji: emoji.isEmpty ? "🎁" : emoji,
+            priceGram: 0,
+            inProfile: true,
+            archived: true,
+            nftLink: nftLink,
+            giftNumber: giftNumber
+        )
+        var current = self.gifts
+        current.append(gift)
+        self.gifts = current
+        return gift
+    }
+
+    /// Visually sends a gift to your own profile without removing it from the showcase.
+    public func sendToProfile(uid: String) {
+        guard let gift = self.gifts.first(where: { $0.uid == uid }) else {
+            return
+        }
+        self.setInProfile(uid: uid, inProfile: true)
+        self.appendTransfer(emoji: gift.emoji, title: gift.name, recipientName: "Мой профиль", recipientId: TeleFlowSettings.shared.accountId, amount: 0, isGram: false)
     }
 
     public func setUpgraded(uid: String, upgraded: Bool) {
@@ -176,8 +291,63 @@ public final class TeleFlowGiftStore {
         }
     }
 
-    /// Removes the gift from the showcase and writes a visual transfer record.
-    /// The record stays only on this device; no real message is ever sent.
+    // MARK: Local gram operations and history
+
+    /// Sets the visual balance and records the difference as a top-up or adjustment.
+    @discardableResult
+    public func setLocalGramBalance(_ value: Int64) -> Int64 {
+        let settings = TeleFlowSettings.shared
+        let previous = settings.localGramValue
+        let updated = max(0, value)
+        guard updated != previous else {
+            return updated
+        }
+        settings.localGramValue = updated
+        let delta = updated - previous
+        self.appendTransaction(kind: delta > 0 ? .topUp : .adjustment, title: delta > 0 ? "Пополнение баланса" : "Изменение баланса", recipientName: "", recipientId: 0, amount: delta)
+        return updated
+    }
+
+    /// Adds a positive amount to the visual balance and writes a top-up entry.
+    @discardableResult
+    public func topUpLocalGram(_ amount: Int64) -> Bool {
+        guard amount > 0 else {
+            return false
+        }
+        TeleFlowSettings.shared.addLocalGram(amount)
+        self.appendTransaction(kind: .topUp, title: "Пополнение баланса", recipientName: "", recipientId: 0, amount: amount)
+        return true
+    }
+
+    /// Buys a catalog gift into the local showcase and records the visual spend.
+    @discardableResult
+    public func purchase(_ gift: TeleFlowShowcaseGift) -> Bool {
+        let settings = TeleFlowSettings.shared
+        guard gift.priceGram >= 0, settings.localGramValue >= gift.priceGram else {
+            return false
+        }
+        settings.addLocalGram(-gift.priceGram)
+        _ = self.add(gift)
+        self.appendTransaction(kind: .purchase, title: "Покупка: \(gift.emoji) \(gift.name)", recipientName: "", recipientId: 0, amount: -gift.priceGram)
+        return true
+    }
+
+    /// Visually sends a catalog gift directly to a chat recipient. The price is
+    /// deducted locally and the operation appears in both local journals.
+    @discardableResult
+    public func giftCatalogGift(_ gift: TeleFlowShowcaseGift, recipientName: String, recipientId: Int64) -> Bool {
+        let settings = TeleFlowSettings.shared
+        guard !recipientName.isEmpty, gift.priceGram >= 0, settings.localGramValue >= gift.priceGram else {
+            return false
+        }
+        settings.addLocalGram(-gift.priceGram)
+        self.appendTransfer(emoji: gift.emoji, title: gift.name, recipientName: recipientName, recipientId: recipientId, amount: gift.priceGram, isGram: false)
+        self.appendTransaction(kind: .gift, title: "Подарок: \(gift.emoji) \(gift.name)", recipientName: recipientName, recipientId: recipientId, amount: -gift.priceGram)
+        return true
+    }
+
+    /// Removes a showcase gift and writes a visual transfer record. Its gram price
+    /// was already paid when it entered the showcase, so no second debit is made.
     public func giftAway(uid: String, recipientName: String, recipientId: Int64) {
         var current = self.gifts
         guard let index = current.firstIndex(where: { $0.uid == uid }) else {
@@ -185,14 +355,31 @@ public final class TeleFlowGiftStore {
         }
         let gift = current.remove(at: index)
         self.gifts = current
+        self.appendTransfer(emoji: gift.emoji, title: gift.name, recipientName: recipientName, recipientId: recipientId, amount: gift.priceGram, isGram: false)
+    }
+
+    /// Debits visual gram and writes matching transfer and balance-history entries.
+    @discardableResult
+    public func recordGramTransfer(amount: Int64, recipientName: String, recipientId: Int64) -> Bool {
+        let settings = TeleFlowSettings.shared
+        guard amount > 0, !recipientName.isEmpty, settings.localGramValue >= amount else {
+            return false
+        }
+        settings.addLocalGram(-amount)
+        self.appendTransfer(emoji: "🔥", title: "Gram", recipientName: recipientName, recipientId: recipientId, amount: amount, isGram: true)
+        self.appendTransaction(kind: .transfer, title: "Перевод gram", recipientName: recipientName, recipientId: recipientId, amount: -amount)
+        return true
+    }
+
+    private func appendTransfer(emoji: String, title: String, recipientName: String, recipientId: Int64, amount: Int64, isGram: Bool) {
         let record = TeleFlowTransferRecord(
             uid: "tr." + String(UUID().uuidString.prefix(8)),
-            emoji: gift.emoji,
-            title: gift.name,
+            emoji: emoji,
+            title: title,
             recipientName: recipientName,
             recipientId: recipientId,
-            amount: 0,
-            isGram: false,
+            amount: amount,
+            isGram: isGram,
             date: Date().timeIntervalSince1970
         )
         var records = self.transfers
@@ -200,22 +387,20 @@ public final class TeleFlowGiftStore {
         self.transfers = records
     }
 
-    /// Writes a visual gram transfer record. The caller is responsible for
-    /// updating the local gram balance.
-    public func recordGramTransfer(amount: Int64, recipientName: String, recipientId: Int64) {
-        let record = TeleFlowTransferRecord(
-            uid: "tr." + String(UUID().uuidString.prefix(8)),
-            emoji: "🔥",
-            title: "Gram",
+    private func appendTransaction(kind: TeleFlowGramTransactionKind, title: String, recipientName: String, recipientId: Int64, amount: Int64) {
+        let record = TeleFlowGramTransaction(
+            uid: "gr." + String(UUID().uuidString.prefix(8)),
+            kind: kind,
+            title: title,
             recipientName: recipientName,
             recipientId: recipientId,
             amount: amount,
-            isGram: true,
+            balanceAfter: TeleFlowSettings.shared.localGramValue,
             date: Date().timeIntervalSince1970
         )
-        var records = self.transfers
+        var records = self.transactions
         records.append(record)
-        self.transfers = records
+        self.transactions = records
     }
 
     public func removeTransfer(uid: String) {
@@ -226,6 +411,10 @@ public final class TeleFlowGiftStore {
 
     public func removeAllTransfers() {
         self.transfers = []
+    }
+
+    public func removeAllTransactions() {
+        self.transactions = []
     }
 
     public func remove(uid: String) {

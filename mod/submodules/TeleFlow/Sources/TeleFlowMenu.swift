@@ -433,14 +433,15 @@ public enum TeleFlowMenu {
 
     static func makeLocalGramController() -> UIViewController {
         let settings = TeleFlowSettings.shared
+        let store = TeleFlowGiftStore.shared
         return TeleFlowListController(title: "Локальные gram", sections: {
             return [
                 TeleFlowSection(header: "Gram", footer: "Визуальный баланс gram: показывается в твоём профиле и в маркет-витрине мода. Настоящий баланс и покупки Telegram не затрагиваются, всё остаётся только на этом устройстве.", rows: [
                     TeleFlowRow(title: "Показывать баланс в профиле", kind: .toggle(icon: "flame.fill", color: .systemOrange, get: { settings.localGramEnabled }, set: { settings.localGramEnabled = $0 })),
-                    TeleFlowRow(title: "Значение баланса", kind: .link(icon: nil, color: nil, value: {
-                        return "\(settings.localGramValue)"
+                    TeleFlowRow(title: "Текущий баланс", kind: .link(icon: nil, color: nil, value: {
+                        return "🔥 \(settings.localGramValue)"
                     }, action: { controller in
-                        let alert = UIAlertController(title: "Баланс gram", message: "Введи число, которое будет показано", preferredStyle: .alert)
+                        let alert = UIAlertController(title: "Установить баланс gram", message: "Разница со старым значением будет записана в историю.", preferredStyle: .alert)
                         alert.addTextField { tf in
                             tf.keyboardType = .numberPad
                             tf.text = "\(settings.localGramValue)"
@@ -448,14 +449,35 @@ public enum TeleFlowMenu {
                         alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
                         alert.addAction(UIAlertAction(title: "Готово", style: .default, handler: { [weak alert, weak controller] _ in
                             if let text = alert?.textFields?.first?.text, let value = Int64(text) {
-                                settings.localGramValue = value
+                                store.setLocalGramBalance(value)
                             }
                             (controller as? TeleFlowListController)?.reload()
                         }))
                         controller.present(alert, animated: true)
                     })),
+                    TeleFlowRow(title: "Пополнить баланс (визуально)", kind: .link(icon: "plus.circle.fill", color: .systemGreen, value: { nil }, action: { controller in
+                        let alert = UIAlertController(title: "Пополнить gram", message: "Введи сумму визуального пополнения", preferredStyle: .alert)
+                        alert.addTextField { tf in
+                            tf.keyboardType = .numberPad
+                            tf.placeholder = "Сумма gram"
+                        }
+                        alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+                        alert.addAction(UIAlertAction(title: "Пополнить", style: .default, handler: { [weak alert, weak controller] _ in
+                            if let text = alert?.textFields?.first?.text, let value = Int64(text) {
+                                _ = store.topUpLocalGram(value)
+                            }
+                            (controller as? TeleFlowListController)?.reload()
+                        }))
+                        controller.present(alert, animated: true)
+                    })),
+                    TeleFlowRow(title: "История баланса", kind: .link(icon: "clock.arrow.circlepath", color: .systemBlue, value: {
+                        let count = store.transactionCount
+                        return count > 0 ? "\(count)" : nil
+                    }, action: { controller in
+                        controller.navigationController?.pushViewController(TeleFlowMenu.makeGramHistoryController(), animated: true)
+                    })),
                     TeleFlowRow(title: "Подарить gram (визуально)", kind: .link(icon: "paperplane.fill", color: .systemOrange, value: {
-                        let count = TeleFlowGiftStore.shared.allTransfers.filter { $0.isGram }.count
+                        let count = store.allTransfers.filter { $0.isGram }.count
                         return count > 0 ? "\(count)" : nil
                     }, action: { controller in
                         controller.navigationController?.pushViewController(TeleFlowMenu.makeGiftGramController(), animated: true)
@@ -465,14 +487,75 @@ public enum TeleFlowMenu {
         })
     }
 
-    static func makeGiftGramController() -> UIViewController {
+    static func makeGramHistoryController() -> UIViewController {
+        return TeleFlowListController(title: "История gram", sections: {
+            var rows: [TeleFlowRow] = []
+            for transaction in TeleFlowGiftStore.shared.allTransactions {
+                let icon: String
+                switch transaction.kind {
+                case .topUp:
+                    icon = "➕"
+                case .adjustment:
+                    icon = "✏️"
+                case .purchase:
+                    icon = "🛍"
+                case .gift:
+                    icon = "🎁"
+                case .transfer:
+                    icon = "🔥"
+                }
+                let sign = transaction.amount > 0 ? "+" : ""
+                rows.append(TeleFlowRow(title: "\(icon) \(transaction.title)", kind: .link(icon: nil, color: nil, value: {
+                    return "\(sign)\(transaction.amount) 🔥"
+                }, action: { controller in
+                    var details = "\(TeleFlowMenu.gramDateString(transaction.date))\n\nОперация: \(sign)\(transaction.amount) gram\nБаланс после: \(transaction.balanceAfter) gram"
+                    if !transaction.recipientName.isEmpty {
+                        details += "\nПолучатель: \(transaction.recipientName)"
+                    }
+                    let alert = UIAlertController(title: transaction.title, message: details, preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: "Ок", style: .cancel))
+                    controller.present(alert, animated: true)
+                })))
+            }
+            if rows.isEmpty {
+                rows.append(TeleFlowRow(title: "Операций пока не было", kind: .choice(isSelected: { false }, action: {})))
+            }
+            return [
+                TeleFlowSection(header: "Пополнения и списания", footer: "Плюс — визуальное пополнение, минус — покупка, подарок или перевод. История хранится только на этом устройстве.", rows: rows),
+                TeleFlowSection(rows: [
+                    TeleFlowRow(title: "Очистить историю баланса", kind: .button(isDestructive: true, action: { controller in
+                        TeleFlowGiftStore.shared.removeAllTransactions()
+                        (controller as? TeleFlowListController)?.reload()
+                    }))
+                ])
+            ]
+        })
+    }
+
+    private static func parseRecipient(_ raw: String) -> (name: String, id: Int64) {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let id = Int64(value), id != 0 {
+            return ("ID \(id)", id)
+        }
+        return (value, 0)
+    }
+
+    private static func gramDateString(_ timestamp: TimeInterval) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ru_RU")
+        formatter.dateFormat = "d MMM yyyy, HH:mm"
+        return formatter.string(from: Date(timeIntervalSince1970: timestamp))
+    }
+
+    static func makeGiftGramController(recipientName: String = "", recipientId: Int64 = 0) -> UIViewController {
         let settings = TeleFlowSettings.shared
         return TeleFlowListController(title: "Подарить gram (визуал)", sections: {
             var rows: [TeleFlowRow] = [
                 TeleFlowRow(title: "Отправить gram человеку (визуально)", kind: .button(isDestructive: false, action: { controller in
-                    let alert = UIAlertController(title: "Отправить gram (визуально)", message: "Запись останется только у тебя — настоящие переводы не отправляются.", preferredStyle: .alert)
+                    let alert = UIAlertController(title: "Отправить gram (визуально)", message: "Сумма спишется с локального баланса и попадёт в историю. Настоящие переводы не отправляются.", preferredStyle: .alert)
                     alert.addTextField { tf in
                         tf.placeholder = "@юзернейм или ID"
+                        tf.text = recipientName
                     }
                     alert.addTextField { tf in
                         tf.placeholder = "Сумма gram"
@@ -480,28 +563,32 @@ public enum TeleFlowMenu {
                     }
                     alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
                     alert.addAction(UIAlertAction(title: "Отправить", style: .default, handler: { [weak alert, weak controller] _ in
-                        let recipient = alert?.textFields?.first?.text ?? ""
+                        let recipient = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespaces) ?? ""
                         let amountText = alert?.textFields?.last?.text ?? ""
-                        guard !recipient.trimmingCharacters(in: .whitespaces).isEmpty, let amount = Int64(amountText), amount > 0 else {
+                        guard !recipient.isEmpty, let amount = Int64(amountText), amount > 0 else {
                             return
                         }
-                        if settings.localGramValue >= amount {
-                            settings.addLocalGram(-amount)
-                            TeleFlowGiftStore.shared.recordGramTransfer(amount: amount, recipientName: recipient.trimmingCharacters(in: .whitespaces), recipientId: 0)
+                        let parsed = TeleFlowMenu.parseRecipient(recipient)
+                        let id = recipient == recipientName ? recipientId : parsed.id
+                        if TeleFlowGiftStore.shared.recordGramTransfer(amount: amount, recipientName: parsed.name, recipientId: id) {
                             controller?.navigationController?.pushViewController(TeleFlowMenu.makeTransfersController(), animated: true)
+                        } else if settings.localGramValue < amount {
+                            let insufficient = UIAlertController(title: "Не хватает gram", message: "Баланс: \(settings.localGramValue), нужно: \(amount).", preferredStyle: .alert)
+                            insufficient.addAction(UIAlertAction(title: "Ок", style: .cancel))
+                            controller?.present(insufficient, animated: true)
                         }
                     }))
                     controller.present(alert, animated: true)
                 }))
             ]
             for transfer in TeleFlowGiftStore.shared.allTransfers.filter({ $0.isGram }) {
-                rows.append(TeleFlowRow(title: "\(transfer.emoji) → \(transfer.recipientName)", kind: .link(icon: nil, color: nil, value: { "\(transfer.amount) gram" }, action: { _ in })))
+                rows.append(TeleFlowRow(title: "\(transfer.emoji) → \(transfer.recipientName)", kind: .link(icon: nil, color: nil, value: { "−\(transfer.amount) gram" }, action: { _ in })))
             }
-            if TeleFlowGiftStore.shared.transferCount == 0 {
+            if TeleFlowGiftStore.shared.allTransfers.filter({ $0.isGram }).isEmpty {
                 rows.append(TeleFlowRow(title: "Пока нет визуальных переводов", kind: .choice(isSelected: { false }, action: {})))
             }
             return [
-                TeleFlowSection(header: "Визуальные переводы", footer: "Показываются только в этом меню. Баланс gram меняется только у тебя.", rows: rows)
+                TeleFlowSection(header: "Визуальные переводы", footer: "Показываются только в этом меню. Каждый перевод списывает локальные gram и остаётся в истории баланса.", rows: rows)
             ]
         })
     }
@@ -511,13 +598,25 @@ public enum TeleFlowMenu {
             var rows: [TeleFlowRow] = []
             for transfer in TeleFlowGiftStore.shared.allTransfers {
                 let title: String
+                let value: String?
                 if transfer.isGram {
                     title = "🔥 \(transfer.amount) gram → \(transfer.recipientName)"
+                    value = "−\(transfer.amount) 🔥"
                 } else {
                     title = "\(transfer.emoji) \(transfer.title) → \(transfer.recipientName)"
+                    value = transfer.amount > 0 ? "🔥 \(transfer.amount)" : nil
                 }
-                rows.append(TeleFlowRow(title: title, kind: .link(icon: nil, color: nil, value: { nil }, action: { controller in
-                    let alert = UIAlertController(title: title, message: "Визуальная запись. Настоящий перевод не отправлялся — это только журнал в меню мода.", preferredStyle: .alert)
+                rows.append(TeleFlowRow(title: title, kind: .link(icon: nil, color: nil, value: { value }, action: { controller in
+                    var details = "Визуальная запись. Настоящий подарок или перевод не отправлялся.\n\n\(TeleFlowMenu.gramDateString(transfer.date))\nПолучатель: \(transfer.recipientName)"
+                    if transfer.recipientId != 0 {
+                        details += "\nID: \(transfer.recipientId)"
+                    }
+                    if transfer.isGram {
+                        details += "\nСписано: \(transfer.amount) gram"
+                    } else if transfer.amount > 0 {
+                        details += "\nВизуальная цена: \(transfer.amount) gram"
+                    }
+                    let alert = UIAlertController(title: title, message: details, preferredStyle: .alert)
                     alert.addAction(UIAlertAction(title: "Удалить запись", style: .destructive, handler: { _ in
                         TeleFlowGiftStore.shared.removeTransfer(uid: transfer.uid)
                         (controller as? TeleFlowListController)?.reload()
@@ -553,9 +652,20 @@ public enum TeleFlowMenu {
                     TeleFlowRow(title: "Подарено (визуально) (\(TeleFlowGiftStore.shared.transferCount))", kind: .link(icon: "paperplane.fill", color: .systemOrange, value: { nil }, action: { controller in
                         controller.navigationController?.pushViewController(TeleFlowMenu.makeTransfersController(), animated: true)
                     })),
+                    TeleFlowRow(title: "История баланса (\(TeleFlowGiftStore.shared.transactionCount))", kind: .link(icon: "clock.arrow.circlepath", color: .systemBlue, value: { nil }, action: { controller in
+                        controller.navigationController?.pushViewController(TeleFlowMenu.makeGramHistoryController(), animated: true)
+                    })),
                     TeleFlowRow(title: "Очистить витрину", kind: .button(isDestructive: true, action: { controller in
                         TeleFlowGiftStore.shared.removeAll()
                         (controller as? TeleFlowListController)?.reload()
+                    }))
+                ]),
+                TeleFlowSection(header: "Архивные NFT", footer: "Добавь снятый с продажи или недоступный NFT как локальную карточку. Она появится в твоём визуальном профиле; её можно улучшить и визуально отправить себе. Это не настоящий NFT.", rows: [
+                    TeleFlowRow(title: "Добавить архивный NFT в профиль", kind: .link(icon: "plus.square.fill", color: .systemPurple, value: {
+                        let count = TeleFlowGiftStore.shared.all.filter { $0.archived }.count
+                        return count > 0 ? "\(count)" : nil
+                    }, action: { controller in
+                        TeleFlowMenu.addArchivedGift(controller: controller)
                     }))
                 ]),
                 TeleFlowSection(header: "Каталог", footer: "Покупка тратит локальные gram. Баланс меняется в разделе «Локальные gram».", rows: TeleFlowGiftStore.catalog.map { gift in
@@ -567,6 +677,57 @@ public enum TeleFlowMenu {
                 })
             ]
         })
+    }
+
+    private static func addArchivedGift(controller: UIViewController) {
+        let alert = UIAlertController(title: "Архивный NFT", message: "Локальная карточка подарка, которого нет в продаже. Название обязательно, остальное — по желанию.", preferredStyle: .alert)
+        alert.addTextField { tf in
+            tf.placeholder = "Название, например ChillFlame"
+        }
+        alert.addTextField { tf in
+            tf.placeholder = "Эмодзи (по умолчанию 🎁)"
+        }
+        alert.addTextField { tf in
+            tf.placeholder = "Номер, например 281762"
+            tf.keyboardType = .numberPad
+        }
+        alert.addTextField { tf in
+            tf.placeholder = "https://t.me/nft/… (необязательно)"
+            if let clipboard = UIPasteboard.general.string?.trimmingCharacters(in: .whitespacesAndNewlines), clipboard.lowercased().contains("t.me/nft/") {
+                tf.text = clipboard
+            }
+        }
+        alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Добавить в профиль", style: .default, handler: { [weak alert, weak controller] _ in
+            guard let fields = alert?.textFields, fields.count == 4 else {
+                return
+            }
+            let name = fields[0].text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let emoji = fields[1].text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let number = fields[2].text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            var link = fields[3].text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !name.isEmpty else {
+                return
+            }
+            if !link.isEmpty {
+                if link.lowercased().hasPrefix("t.me/nft/") {
+                    link = "https://" + link
+                }
+                guard link.lowercased().hasPrefix("https://t.me/nft/") else {
+                    let error = UIAlertController(title: "Неверная ссылка", message: "Для архивной карточки разрешена только официальная ссылка вида https://t.me/nft/…", preferredStyle: .alert)
+                    error.addAction(UIAlertAction(title: "Ок", style: .cancel))
+                    controller?.present(error, animated: true)
+                    return
+                }
+            }
+            let gift = TeleFlowGiftStore.shared.addArchived(name: name, emoji: String(emoji.prefix(4)), nftLink: link, giftNumber: number)
+            if let controller = controller {
+                TeleFlowMenu.playGiftSentAnimation(emoji: gift.emoji, recipientName: "Мой профиль", controller: controller, completion: {
+                    (controller as? TeleFlowListController)?.reload()
+                })
+            }
+        }))
+        controller.present(alert, animated: true)
     }
 
     private static func buyGift(_ gift: TeleFlowShowcaseGift, controller: UIViewController) {
@@ -582,12 +743,163 @@ public enum TeleFlowMenu {
         }
         let confirm = UIAlertController(title: "\(gift.emoji) \(gift.name)", message: "Купить за 🔥 \(gift.priceGram) gram? Подарок появится в визуальной витрине мода.", preferredStyle: .alert)
         confirm.addAction(UIAlertAction(title: "Купить", style: .default, handler: { _ in
-            settings.addLocalGram(-gift.priceGram)
-            _ = TeleFlowGiftStore.shared.add(gift)
-            controller.navigationController?.pushViewController(TeleFlowMenu.makeShowcaseController(), animated: true)
+            if TeleFlowGiftStore.shared.purchase(gift) {
+                controller.navigationController?.pushViewController(TeleFlowMenu.makeShowcaseController(), animated: true)
+            }
         }))
         confirm.addAction(UIAlertAction(title: "Отмена", style: .cancel))
         controller.present(confirm, animated: true)
+    }
+
+    // MARK: Chat market (visual only, recipient-aware)
+
+    static func makeChatMarketController(recipientName: String, recipientId: Int64) -> UIViewController {
+        let recipient = recipientName.isEmpty ? (recipientId != 0 ? "ID \(recipientId)" : "Собеседник") : recipientName
+        let store = TeleFlowGiftStore.shared
+        return TeleFlowListController(title: "Маркет · \(recipient)", sections: {
+            let settings = TeleFlowSettings.shared
+            let chatTransfers = store.allTransfers.filter { transfer in
+                if recipientId != 0 {
+                    return transfer.recipientId == recipientId
+                }
+                return transfer.recipientName.caseInsensitiveCompare(recipient) == .orderedSame
+            }
+
+            var sentRows: [TeleFlowRow] = chatTransfers.map { transfer in
+                let title = transfer.isGram ? "🔥 \(transfer.amount) gram" : "\(transfer.emoji) \(transfer.title)"
+                return TeleFlowRow(title: title, kind: .link(icon: nil, color: nil, value: { "визуально" }, action: { controller in
+                    let alert = UIAlertController(title: title, message: "Визуальный подарок для \(transfer.recipientName).\n\(TeleFlowMenu.gramDateString(transfer.date))\n\nНастоящее сообщение или подарок в Telegram не отправлялись.", preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: "Ок", style: .cancel))
+                    controller.present(alert, animated: true)
+                }))
+            }
+            if sentRows.isEmpty {
+                sentRows.append(TeleFlowRow(title: "В этом чате пока нет визуальных подарков", kind: .choice(isSelected: { false }, action: {})))
+            }
+
+            var showcaseRows: [TeleFlowRow] = store.all.map { gift in
+                return TeleFlowRow(title: "\(gift.emoji) \(gift.name)", kind: .link(icon: nil, color: nil, value: { gift.inProfile ? "📌" : nil }, action: { controller in
+                    TeleFlowMenu.confirmShowcaseChatGift(gift, recipientName: recipient, recipientId: recipientId, controller: controller)
+                }))
+            }
+            if showcaseRows.isEmpty {
+                showcaseRows.append(TeleFlowRow(title: "Витрина пуста", kind: .choice(isSelected: { false }, action: {})))
+            }
+
+            let recipientDescription = recipientId != 0 ? "\(recipient) · ID \(recipientId)" : recipient
+            return [
+                TeleFlowSection(header: "Получатель: \(recipientDescription)", footer: "Всё на этом экране — локальный визуал. Собеседник ничего не получает, настоящие сообщения и балансы Telegram не меняются.", rows: [
+                    TeleFlowRow(title: "Баланс gram", kind: .link(icon: "flame.fill", color: .systemOrange, value: {
+                        return "🔥 \(settings.localGramValue)"
+                    }, action: { controller in
+                        controller.navigationController?.pushViewController(TeleFlowMenu.makeLocalGramController(), animated: true)
+                    })),
+                    TeleFlowRow(title: "История пополнений и списаний", kind: .link(icon: "clock.arrow.circlepath", color: .systemBlue, value: {
+                        return store.transactionCount > 0 ? "\(store.transactionCount)" : nil
+                    }, action: { controller in
+                        controller.navigationController?.pushViewController(TeleFlowMenu.makeGramHistoryController(), animated: true)
+                    })),
+                    TeleFlowRow(title: "Подарить gram этому человеку", kind: .link(icon: "paperplane.fill", color: .systemOrange, value: { nil }, action: { controller in
+                        controller.navigationController?.pushViewController(TeleFlowMenu.makeGiftGramController(recipientName: recipient, recipientId: recipientId), animated: true)
+                    }))
+                ]),
+                TeleFlowSection(header: "Подарить из каталога", footer: "Цена спишется с визуального баланса. Операция появится в истории gram и в локальном журнале этого чата.", rows: TeleFlowGiftStore.catalog.map { gift in
+                    return TeleFlowRow(title: "\(gift.emoji) \(gift.name)", kind: .link(icon: nil, color: nil, value: {
+                        return "🔥 \(gift.priceGram)"
+                    }, action: { controller in
+                        TeleFlowMenu.confirmCatalogChatGift(gift, recipientName: recipient, recipientId: recipientId, controller: controller)
+                    }))
+                }),
+                TeleFlowSection(header: "Подарить с моей витрины", footer: "Подарок уйдёт с локальной витрины. Повторное списание gram не производится — он уже был куплен.", rows: showcaseRows),
+                TeleFlowSection(header: "Визуально подарено в этом чате", rows: sentRows)
+            ]
+        })
+    }
+
+    private static func confirmCatalogChatGift(_ gift: TeleFlowShowcaseGift, recipientName: String, recipientId: Int64, controller: UIViewController) {
+        let settings = TeleFlowSettings.shared
+        guard settings.localGramValue >= gift.priceGram else {
+            TeleFlowMenu.showInsufficientGram(required: gift.priceGram, controller: controller)
+            return
+        }
+        let alert = UIAlertController(title: "\(gift.emoji) \(gift.name)", message: "Визуально подарить \(recipientName) за 🔥 \(gift.priceGram) gram?\n\nС баланса спишется \(gift.priceGram) gram. Настоящий подарок не отправляется.", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Подарить визуально", style: .default, handler: { [weak controller] _ in
+            if TeleFlowGiftStore.shared.giftCatalogGift(gift, recipientName: recipientName, recipientId: recipientId), let controller = controller {
+                TeleFlowMenu.playGiftSentAnimation(emoji: gift.emoji, recipientName: recipientName, controller: controller, completion: {
+                    (controller as? TeleFlowListController)?.reload()
+                })
+            }
+        }))
+        alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+        controller.present(alert, animated: true)
+    }
+
+    private static func confirmShowcaseChatGift(_ gift: TeleFlowShowcaseGift, recipientName: String, recipientId: Int64, controller: UIViewController) {
+        let alert = UIAlertController(title: "\(gift.emoji) \(gift.name)", message: "Визуально подарить \(recipientName)? Подарок уйдёт с твоей локальной витрины, настоящий подарок не отправляется.", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Подарить визуально", style: .default, handler: { [weak controller] _ in
+            TeleFlowGiftStore.shared.giftAway(uid: gift.uid, recipientName: recipientName, recipientId: recipientId)
+            if let controller = controller {
+                TeleFlowMenu.playGiftSentAnimation(emoji: gift.emoji, recipientName: recipientName, controller: controller, completion: {
+                    (controller as? TeleFlowListController)?.reload()
+                })
+            }
+        }))
+        alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+        controller.present(alert, animated: true)
+    }
+
+    private static func showInsufficientGram(required: Int64, controller: UIViewController) {
+        let balance = TeleFlowSettings.shared.localGramValue
+        let alert = UIAlertController(title: "Не хватает gram", message: "Баланс: \(balance), нужно: \(required). Можно визуально пополнить баланс в разделе «Локальные gram».", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Пополнить", style: .default, handler: { _ in
+            controller.navigationController?.pushViewController(TeleFlowMenu.makeLocalGramController(), animated: true)
+        }))
+        alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+        controller.present(alert, animated: true)
+    }
+
+    private static func playGiftSentAnimation(emoji: String, recipientName: String, controller: UIViewController, completion: @escaping () -> Void) {
+        guard let view = controller.navigationController?.view ?? controller.view else {
+            completion()
+            return
+        }
+        let overlay = UIView(frame: view.bounds)
+        overlay.backgroundColor = UIColor(white: 0.0, alpha: 0.7)
+        overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(overlay)
+
+        let giftLabel = UILabel()
+        giftLabel.text = emoji
+        giftLabel.font = UIFont.systemFont(ofSize: 76.0)
+        giftLabel.sizeToFit()
+        giftLabel.center = CGPoint(x: overlay.bounds.midX, y: overlay.bounds.midY - 42.0)
+        overlay.addSubview(giftLabel)
+
+        let statusLabel = UILabel()
+        statusLabel.text = "✓ Визуально подарено\n\(recipientName)"
+        statusLabel.textColor = .white
+        statusLabel.font = UIFont.systemFont(ofSize: 18.0, weight: .semibold)
+        statusLabel.textAlignment = .center
+        statusLabel.numberOfLines = 0
+        statusLabel.frame = CGRect(x: 24.0, y: overlay.bounds.midY + 22.0, width: overlay.bounds.width - 48.0, height: 70.0)
+        overlay.addSubview(statusLabel)
+
+        giftLabel.transform = CGAffineTransform(scaleX: 0.35, y: 0.35)
+        statusLabel.alpha = 0.0
+        UIView.animate(withDuration: 0.5, delay: 0.0, usingSpringWithDamping: 0.55, initialSpringVelocity: 0.7, options: [], animations: {
+            giftLabel.transform = CGAffineTransform(scaleX: 1.0, y: 1.0)
+            statusLabel.alpha = 1.0
+        }, completion: nil)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
+            UIView.animate(withDuration: 0.25, animations: {
+                overlay.alpha = 0.0
+            }, completion: { _ in
+                overlay.removeFromSuperview()
+                completion()
+            })
+        }
     }
 
     // MARK: Showcase (owned visual gifts, upgrade & craft)
@@ -597,7 +909,7 @@ public enum TeleFlowMenu {
             var rows: [TeleFlowRow] = []
             let gifts = TeleFlowGiftStore.shared.all
             for gift in gifts {
-                var title = (gift.upgraded ? "✨ " : "") + gift.emoji + " " + gift.name + (gift.upgraded ? " · ур. \(gift.priceGram)" : "") + (gift.crafted ? " · крафт" : "")
+                var title = (gift.upgraded ? "✨ " : "") + gift.emoji + " " + gift.name + (gift.giftNumber.isEmpty ? "" : " #\(gift.giftNumber)") + (gift.upgraded && !gift.archived ? " · ур. \(gift.priceGram)" : "") + (gift.crafted ? " · крафт" : "") + (gift.archived ? " · архив" : "")
                 if gift.inProfile {
                     title += " · 📌 в профиле"
                 }
@@ -615,7 +927,18 @@ public enum TeleFlowMenu {
     }
 
     private static func showGiftActions(_ gift: TeleFlowShowcaseGift, controller: UIViewController) {
-        let alert = UIAlertController(title: "\(gift.emoji) \(gift.name)", message: gift.upgraded ? "Улучшен · модель №\(gift.priceGram)" : "Не улучшен", preferredStyle: .actionSheet)
+        let status: String
+        if gift.archived {
+            status = gift.upgraded ? "Архивный NFT · улучшен (визуально)" : "Архивный NFT · локальная карточка"
+        } else {
+            status = gift.upgraded ? "Улучшен · модель №\(gift.priceGram)" : "Не улучшен"
+        }
+        let alert = UIAlertController(title: "\(gift.emoji) \(gift.name)", message: status, preferredStyle: .actionSheet)
+        if let url = URL(string: gift.nftLink), !gift.nftLink.isEmpty {
+            alert.addAction(UIAlertAction(title: "Открыть официальную NFT-ссылку", style: .default, handler: { _ in
+                UIApplication.shared.open(url, options: [:], completionHandler: nil)
+            }))
+        }
         if !gift.upgraded {
             alert.addAction(UIAlertAction(title: "Улучшить ✨", style: .default, handler: { _ in
                 TeleFlowMenu.playUpgradeAnimation(emoji: gift.emoji, controller: controller, completion: {
@@ -624,6 +947,12 @@ public enum TeleFlowMenu {
                 })
             }))
         }
+        alert.addAction(UIAlertAction(title: "Отправить себе в профиль (визуально)", style: .default, handler: { _ in
+            TeleFlowGiftStore.shared.sendToProfile(uid: gift.uid)
+            TeleFlowMenu.playGiftSentAnimation(emoji: gift.emoji, recipientName: "Мой профиль", controller: controller, completion: {
+                (controller as? TeleFlowListController)?.reload()
+            })
+        }))
         alert.addAction(UIAlertAction(title: "Подарить (визуально)", style: .default, handler: { _ in
             TeleFlowMenu.giftAwayVisually(gift, controller: controller)
         }))
@@ -655,7 +984,8 @@ public enum TeleFlowMenu {
             guard !recipient.isEmpty else {
                 return
             }
-            TeleFlowGiftStore.shared.giftAway(uid: gift.uid, recipientName: recipient, recipientId: 0)
+            let parsed = TeleFlowMenu.parseRecipient(recipient)
+            TeleFlowGiftStore.shared.giftAway(uid: gift.uid, recipientName: parsed.name, recipientId: parsed.id)
             controller?.navigationController?.pushViewController(TeleFlowMenu.makeTransfersController(), animated: true)
         }))
         controller.present(alert, animated: true)
@@ -735,6 +1065,26 @@ public enum TeleFlowMenu {
                 completion()
             })
         }
+    }
+
+    /// Presents the recipient-aware visual market over the current chat.
+    public static func presentChatMarket(from view: UIView?, recipientName: String, recipientId: Int64) {
+        guard let rootController = view?.window?.rootViewController else {
+            return
+        }
+        var topController = rootController
+        while let presented = topController.presentedViewController {
+            topController = presented
+        }
+        let root = TeleFlowMenu.makeChatMarketController(recipientName: recipientName, recipientId: recipientId)
+        let navigationController = UINavigationController(rootViewController: root)
+        navigationController.overrideUserInterfaceStyle = .dark
+        navigationController.navigationBar.prefersLargeTitles = false
+        navigationController.modalPresentationStyle = .pageSheet
+        root.navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .close, primaryAction: UIAction { [weak navigationController] _ in
+            navigationController?.dismiss(animated: true)
+        })
+        topController.present(navigationController, animated: true)
     }
 
     /// Presents the menu over whatever is currently on screen.

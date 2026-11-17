@@ -1,0 +1,67 @@
+diff --git a/submodules/TelegramUI/Sources/Chat/UpdateChatPresentationInterfaceState.swift b/submodules/TelegramUI/Sources/Chat/UpdateChatPresentationInterfaceState.swift
+index bcf5cb0..8e9b160 100644
+--- a/submodules/TelegramUI/Sources/Chat/UpdateChatPresentationInterfaceState.swift
++++ b/submodules/TelegramUI/Sources/Chat/UpdateChatPresentationInterfaceState.swift
+@@ -18,6 +18,7 @@ import ComponentFlow
+ import ComponentDisplayAdapters
+ import ChatTitleView
+ import EmojiStatusComponent
++import TeleFlow
+ 
+ extension ChatControllerImpl {
+     func updateRightNavigationButtons(presentationInterfaceState: ChatPresentationInterfaceState, transition: ContainedViewLayoutTransition) {
+@@ -50,12 +51,33 @@ extension ChatControllerImpl {
+         }
+ 
+         // The sidebar button stays outermost, with Saved Messages' search before it.
+-        let rightBarButtons: [UIBarButtonItem]
++        var rightBarButtons: [UIBarButtonItem]
+         if self.rightNavigationButton?.action == .toggleSideList {
+             rightBarButtons = [self.secondaryRightNavigationButton, self.rightNavigationButton].compactMap { $0?.buttonItem }
+         } else {
+             rightBarButtons = [self.rightNavigationButton, self.secondaryRightNavigationButton].compactMap { $0?.buttonItem }
+         }
++        // TeleFlow: preserve every stock button and add one local-market entry.
++        if case .standard(.default) = presentationInterfaceState.mode,
++           presentationInterfaceState.subject == nil,
++           presentationInterfaceState.interfaceState.selectionState == nil,
++           case let .peer(peerId) = presentationInterfaceState.chatLocation,
++           peerId != self.context.account.peerId,
++           presentationInterfaceState.renderedPeer?.chatMainPeer != nil {
++            let identifier = "org.teleflow.chat-market"
++            let giftButton = self.navigationItem.rightBarButtonItems?.first(where: {
++                $0.accessibilityIdentifier == identifier
++            }) ?? UIBarButtonItem(
++                image: UIImage(systemName: "gift.fill"),
++                style: .plain,
++                target: self,
++                action: #selector(self.teleFlowPresentChatMarket)
++            )
++            giftButton.accessibilityIdentifier = identifier
++            giftButton.accessibilityLabel = "Маркет подарков (визуал)"
++            giftButton.tintColor = presentationInterfaceState.theme.rootController.navigationBar.buttonColor
++            rightBarButtons.append(giftButton)
++        }
+         var rightBarButtonsUpdated = false
+         let currentRightBarButtons = self.navigationItem.rightBarButtonItems ?? []
+         if rightBarButtons.count != currentRightBarButtons.count {
+@@ -72,6 +94,19 @@ extension ChatControllerImpl {
+             self.navigationItem.setRightBarButtonItems(rightBarButtons, animated: buttonsAnimated)
+         }
+     }
++
++    @objc private func teleFlowPresentChatMarket() {
++        guard case let .peer(peerId) = self.chatLocation,
++              peerId != self.context.account.peerId,
++              let peer = self.presentationInterfaceState.renderedPeer?.chatMainPeer else {
++            return
++        }
++        TeleFlowMenu.presentChatMarket(
++            from: self.view,
++            recipientName: EnginePeer(peer).compactDisplayTitle,
++            recipientId: peerId.id._internalGetInt64Value()
++        )
++    }
+ }
+ 
+ func updateChatPresentationInterfaceStateImpl(

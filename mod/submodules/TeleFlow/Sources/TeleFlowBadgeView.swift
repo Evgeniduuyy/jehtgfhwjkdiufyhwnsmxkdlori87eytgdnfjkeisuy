@@ -6,6 +6,7 @@ public final class TeleFlowBadgeView: UIView {
     public enum Icon {
         case app
         case gram
+        case gift
     }
 
     private let iconImageView = UIImageView()
@@ -69,6 +70,8 @@ public final class TeleFlowBadgeView: UIView {
                 colors = [UIColor(red: 0.25, green: 0.47, blue: 0.94, alpha: 1.0).cgColor, UIColor(red: 0.16, green: 0.32, blue: 0.78, alpha: 1.0).cgColor]
             case .gram:
                 colors = [UIColor(red: 1.0, green: 0.62, blue: 0.10, alpha: 1.0).cgColor, UIColor(red: 0.93, green: 0.38, blue: 0.05, alpha: 1.0).cgColor]
+            case .gift:
+                colors = [UIColor(red: 0.92, green: 0.36, blue: 0.72, alpha: 1.0).cgColor, UIColor(red: 0.55, green: 0.24, blue: 0.84, alpha: 1.0).cgColor]
             }
             let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors as CFArray, locations: [0.0, 1.0])!
             context.cgContext.drawLinearGradient(gradient, start: CGPoint(x: 0.0, y: 0.0), end: CGPoint(x: 0.0, y: size), options: [])
@@ -96,6 +99,21 @@ public final class TeleFlowBadgeView: UIView {
                 flame.addCurve(to: CGPoint(x: size * 0.50, y: size * 0.16), controlPoint1: CGPoint(x: size * 0.72, y: size * 0.50), controlPoint2: CGPoint(x: size * 0.74, y: size * 0.36))
                 UIColor.white.setFill()
                 flame.fill()
+            case .gift:
+                // A simple white gift box with a ribbon.
+                let box = UIBezierPath(rect: CGRect(x: size * 0.20, y: size * 0.42, width: size * 0.60, height: size * 0.38))
+                UIColor.white.setFill()
+                box.fill()
+                let lid = UIBezierPath(rect: CGRect(x: size * 0.16, y: size * 0.32, width: size * 0.68, height: size * 0.16))
+                lid.fill()
+                let ribbon = UIBezierPath(rect: CGRect(x: size * 0.45, y: size * 0.32, width: size * 0.10, height: size * 0.48))
+                UIColor(red: 0.72, green: 0.30, blue: 0.78, alpha: 1.0).setFill()
+                ribbon.fill()
+                let bowLeft = UIBezierPath(ovalIn: CGRect(x: size * 0.27, y: size * 0.15, width: size * 0.24, height: size * 0.20))
+                UIColor.white.setFill()
+                bowLeft.fill()
+                let bowRight = UIBezierPath(ovalIn: CGRect(x: size * 0.49, y: size * 0.15, width: size * 0.24, height: size * 0.20))
+                bowRight.fill()
             }
         }
     }
