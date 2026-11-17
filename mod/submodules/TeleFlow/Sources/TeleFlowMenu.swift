@@ -195,6 +195,12 @@ public enum TeleFlowMenu {
                     }, action: { controller in
                         controller.navigationController?.pushViewController(TeleFlowMenu.makeMarketController(), animated: true)
                     })),
+                    TeleFlowRow(title: "Черновики предложений (локально)", kind: .link(icon: "doc.text.fill", color: .systemIndigo, value: {
+                        let count = TeleFlowOfferStore.shared.drafts.count
+                        return count > 0 ? "\(count)" : nil
+                    }, action: { controller in
+                        controller.navigationController?.pushViewController(TeleFlowMenu.makeOfferDraftsController(), animated: true)
+                    })),
                     TeleFlowRow(title: "Чат и интерфейс", kind: .link(icon: "message.fill", color: .systemGreen, value: { nil }, action: { controller in
                         controller.navigationController?.pushViewController(TeleFlowMenu.makeChatInterfaceController(), animated: true)
                     })),
