@@ -17,9 +17,14 @@ public final class TeleFlowSettings {
             self.prefix + "deletedExcludeChannels": false,
             self.prefix + "deletedExcludeBots": false,
             self.prefix + "ghostHideOnline": false,
+            self.prefix + "ghostAlwaysOnline": false,
             self.prefix + "ghostHideTyping": false,
+            self.prefix + "ghostHideRecording": false,
+            self.prefix + "ghostHideUploading": false,
             self.prefix + "ghostHideReadReceipts": false,
             self.prefix + "hideSponsoredMessages": false,
+            self.prefix + "hideSearchAds": false,
+            self.prefix + "hideMyStars": false,
             self.prefix + "localStarsEnabled": false,
             self.prefix + "localStarsValue": 0,
             self.prefix + "showPeerIdInProfile": true,
@@ -30,6 +35,16 @@ public final class TeleFlowSettings {
             self.prefix + "zalgoFilter": false,
             self.prefix + "fullTimeServiceMessages": false,
             self.prefix + "hideGiftsTab": false,
+            self.prefix + "personalProfileBackground": false,
+            self.prefix + "showTypingCharacterCounter": false,
+            self.prefix + "showMessageCharacterCount": false,
+            self.prefix + "unlimitedRecentStickers": false,
+            self.prefix + "unlimitedFavoriteStickers": false,
+            self.prefix + "uploadSmallFileStreams": 0,
+            self.prefix + "uploadBigFileStreams": 0,
+            self.prefix + "downloadSmallFileStreams": 0,
+            self.prefix + "downloadBigFileStreams": 0,
+            self.prefix + "downloadStoryStreams": 0,
             self.prefix + "stickerSizePercent": 100
         ])
     }
@@ -84,9 +99,24 @@ public final class TeleFlowSettings {
         set { self.setBool("ghostHideOnline", newValue) }
     }
 
+    public var ghostAlwaysOnline: Bool {
+        get { return self.bool("ghostAlwaysOnline") }
+        set { self.setBool("ghostAlwaysOnline", newValue) }
+    }
+
     public var ghostHideTyping: Bool {
         get { return self.bool("ghostHideTyping") }
         set { self.setBool("ghostHideTyping", newValue) }
+    }
+
+    public var ghostHideRecording: Bool {
+        get { return self.bool("ghostHideRecording") }
+        set { self.setBool("ghostHideRecording", newValue) }
+    }
+
+    public var ghostHideUploading: Bool {
+        get { return self.bool("ghostHideUploading") }
+        set { self.setBool("ghostHideUploading", newValue) }
     }
 
     public var ghostHideReadReceipts: Bool {
@@ -101,6 +131,18 @@ public final class TeleFlowSettings {
         set { self.setBool("hideSponsoredMessages", newValue) }
     }
 
+    /// Hides promoted peers in Search when results are next assembled.
+    public var hideSearchAds: Bool {
+        get { return self.bool("hideSearchAds") }
+        set { self.setBool("hideSearchAds", newValue) }
+    }
+
+    /// Hides only the "My Stars" settings row; direct Stars screens still work.
+    public var hideMyStars: Bool {
+        get { return self.bool("hideMyStars") }
+        set { self.setBool("hideMyStars", newValue) }
+    }
+
     // MARK: Local stars (visual-only balance override)
 
     public var localStarsEnabled: Bool {
@@ -109,8 +151,17 @@ public final class TeleFlowSettings {
     }
 
     public var localStarsValue: Int64 {
-        get { return Int64(self.defaults.integer(forKey: self.prefix + "localStarsValue")) }
-        set { self.defaults.set(Int(newValue), forKey: self.prefix + "localStarsValue") }
+        get { return max(0, Int64(self.defaults.integer(forKey: self.prefix + "localStarsValue"))) }
+        set { self.defaults.set(Int(max(0, newValue)), forKey: self.prefix + "localStarsValue") }
+    }
+
+    /// Changes the local visual star balance used by the gift market.
+    @discardableResult
+    public func addLocalStars(_ amount: Int64) -> Int64 {
+        let (sum, overflow) = self.localStarsValue.addingReportingOverflow(amount)
+        let value = overflow ? (amount >= 0 ? Int64.max : 0) : max(0, sum)
+        self.localStarsValue = value
+        return value
     }
 
     /// If the visual override is on, returns the value to display instead of the real balance.
@@ -126,7 +177,7 @@ public final class TeleFlowSettings {
         set { self.setBool("showPeerIdInProfile", newValue) }
     }
 
-    /// Shows the "Пользователь KinopoiskGram" badge in other people's profiles.
+    /// Shows the badge on your own profile; Telegram cannot verify another user's client.
     public var showKinopoiskBadge: Bool {
         get { return self.bool("showKinopoiskBadge") }
         set { self.setBool("showKinopoiskBadge", newValue) }
@@ -146,14 +197,15 @@ public final class TeleFlowSettings {
     }
 
     public var localGramValue: Int64 {
-        get { return Int64(self.defaults.integer(forKey: self.prefix + "localGramValue")) }
-        set { self.defaults.set(Int(newValue), forKey: self.prefix + "localGramValue") }
+        get { return max(0, Int64(self.defaults.integer(forKey: self.prefix + "localGramValue"))) }
+        set { self.defaults.set(Int(max(0, newValue)), forKey: self.prefix + "localGramValue") }
     }
 
     /// Changes the visual gram balance by a signed amount. Returns the new value.
     @discardableResult
     public func addLocalGram(_ amount: Int64) -> Int64 {
-        let value = max(0, self.localGramValue + amount)
+        let (sum, overflow) = self.localGramValue.addingReportingOverflow(amount)
+        let value = overflow ? (amount >= 0 ? Int64.max : 0) : max(0, sum)
         self.localGramValue = value
         return value
     }
@@ -176,6 +228,66 @@ public final class TeleFlowSettings {
     public var hideGiftsTab: Bool {
         get { return self.bool("hideGiftsTab") }
         set { self.setBool("hideGiftsTab", newValue) }
+    }
+
+    /// Uses your name color as a local profile background when no profile color is set.
+    public var personalProfileBackground: Bool {
+        get { return self.bool("personalProfileBackground") }
+        set { self.setBool("personalProfileBackground", newValue) }
+    }
+
+    public var showTypingCharacterCounter: Bool {
+        get { return self.bool("showTypingCharacterCounter") }
+        set { self.setBool("showTypingCharacterCounter", newValue) }
+    }
+
+    public var showMessageCharacterCount: Bool {
+        get { return self.bool("showMessageCharacterCount") }
+        set { self.setBool("showMessageCharacterCount", newValue) }
+    }
+
+    public var unlimitedRecentStickers: Bool {
+        get { return self.bool("unlimitedRecentStickers") }
+        set { self.setBool("unlimitedRecentStickers", newValue) }
+    }
+
+    public var unlimitedFavoriteStickers: Bool {
+        get { return self.bool("unlimitedFavoriteStickers") }
+        set { self.setBool("unlimitedFavoriteStickers", newValue) }
+    }
+
+    private func streamCount(_ key: String) -> Int {
+        return max(0, min(64, self.defaults.integer(forKey: self.prefix + key)))
+    }
+
+    private func setStreamCount(_ key: String, _ value: Int) {
+        self.defaults.set(max(0, min(64, value)), forKey: self.prefix + key)
+    }
+
+    /// Zero keeps Telegram's stock concurrency. Changes affect new transfers.
+    public var uploadSmallFileStreams: Int {
+        get { return self.streamCount("uploadSmallFileStreams") }
+        set { self.setStreamCount("uploadSmallFileStreams", newValue) }
+    }
+
+    public var uploadBigFileStreams: Int {
+        get { return self.streamCount("uploadBigFileStreams") }
+        set { self.setStreamCount("uploadBigFileStreams", newValue) }
+    }
+
+    public var downloadSmallFileStreams: Int {
+        get { return self.streamCount("downloadSmallFileStreams") }
+        set { self.setStreamCount("downloadSmallFileStreams", newValue) }
+    }
+
+    public var downloadBigFileStreams: Int {
+        get { return self.streamCount("downloadBigFileStreams") }
+        set { self.setStreamCount("downloadBigFileStreams", newValue) }
+    }
+
+    public var downloadStoryStreams: Int {
+        get { return self.streamCount("downloadStoryStreams") }
+        set { self.setStreamCount("downloadStoryStreams", newValue) }
     }
 
     /// Local sticker display size, percent of the stock size (50...150).

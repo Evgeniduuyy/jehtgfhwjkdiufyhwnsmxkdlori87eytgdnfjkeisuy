@@ -1,0 +1,369 @@
+diff --git a/submodules/TelegramUI/Components/Gifts/GiftOptionsScreen/Sources/GiftOptionsScreen.swift b/submodules/TelegramUI/Components/Gifts/GiftOptionsScreen/Sources/GiftOptionsScreen.swift
+--- a/submodules/TelegramUI/Components/Gifts/GiftOptionsScreen/Sources/GiftOptionsScreen.swift
++++ b/submodules/TelegramUI/Components/Gifts/GiftOptionsScreen/Sources/GiftOptionsScreen.swift
+@@ -28,6 +28,7 @@
+ import UndoUI
+ import EdgeEffect
+ import GlassBarButtonComponent
++import TeleFlow
+ 
+ final class GiftOptionsScreenComponent: Component {
+     typealias EnvironmentType = ViewControllerComponentContainer.Environment
+@@ -135,6 +136,7 @@
+         case resale
+         case stars(Int64)
+         case transfer
++        case phantom
+         
+         init(rawValue: Int64) {
+             switch rawValue {
+@@ -148,6 +150,8 @@
+                 self = .transfer
+             case -4:
+                 self = .resale
++            case -5:
++                self = .phantom
+             default:
+                 self = .stars(rawValue)
+             }
+@@ -165,6 +169,8 @@
+                 return -3
+             case .resale:
+                 return -4
++            case .phantom:
++                return -5
+             case let .stars(stars):
+                 return stars
+             }
+@@ -196,6 +202,8 @@
+         private let tabSelector = ComponentView<Empty>()
+         private var starsFilter: StarsFilter = .all
+         private var appliedStarsFilter: StarsFilter = .all
++        private var phantomCurrency: TeleFlowLocalCurrency = .stars
++        private var localDefaultsObserver: NSObjectProtocol?
+         
+         private var switchingFilter = false
+         
+@@ -261,6 +269,10 @@
+                                         return true
+                                     }
+                                 }
++                            case .phantom:
++                                if case .generic = $0 {
++                                    return true
++                                }
+                             case .transfer:
+                                 break
+                             }
+@@ -326,6 +338,12 @@
+                 }
+                 return [self.premiumTitle.view, self.starsTitle.view].compactMap { $0 }
+             }
++            self.localDefaultsObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
++                guard let self, self.starsFilter == .phantom, !self.isUpdating else {
++                    return
++                }
++                self.state?.updated(transition: .immediate)
++            }
+         }
+         
+         /// VoiceOver: the bar items (Close, the balance) before the content.
+@@ -344,6 +362,9 @@
+         deinit {
+             self.starsStateDisposable?.dispose()
+             self.auctionDisposable.dispose()
++            if let localDefaultsObserver = self.localDefaultsObserver {
++                NotificationCenter.default.removeObserver(localDefaultsObserver)
++            }
+         }
+ 
+         func scrollToTop() {
+@@ -357,6 +378,13 @@
+         
+         private func openGift(gift: StarGift, skipDateCheck: Bool = false) {
+             guard let component = self.component, let environment = self.environment else {
++                return
++            }
++            if self.starsFilter == .phantom {
++                guard case let .generic(genericGift) = gift else {
++                    return
++                }
++                self.openPhantomGift(genericGift)
+                 return
+             }
+             let context = component.context
+@@ -570,6 +598,98 @@
+             }
+         }
+         
++        private func phantomGift(for gift: StarGift.Gift) -> TeleFlowShowcaseGift {
++            return TeleFlowShowcaseGift(
++                uid: "phantom.generic.\(gift.id)",
++                name: gift.title ?? "Gift \(gift.id)",
++                emoji: "🎁",
++                priceGram: gift.price,
++                priceStars: gift.price,
++                kind: .ordinary
++            )
++        }
++        
++        private func openPhantomGift(_ gift: StarGift.Gift) {
++            guard let component = self.component, let environment = self.environment, let controller = environment.controller() else {
++                return
++            }
++            let mainController = (controller as? GiftOptionsScreen)?.parentController() ?? controller
++            let localGift = self.phantomGift(for: gift)
++            let currency = self.phantomCurrency
++            let price = localGift.price(for: currency)
++            let balance = TeleFlowGiftStore.shared.balance(currency: currency)
++            let recipientId = component.peerId.id._internalGetInt64Value()
++            let recipientName = self.state?.peer?.compactDisplayTitle ?? (recipientId != 0 ? "ID \(recipientId)" : "Получатель")
++            let isSelf = component.peerId == component.context.account.peerId
++            let operationText = isSelf ? "Покупка добавит подарок в локальную витрину." : "Можно купить себе или визуально подарить \(recipientName)."
++            let text = "\(operationText)\n\nЦена: \(currency.symbol) \(price)\nЛокальный баланс: \(currency.symbol) \(balance)\n\nНастоящие платежи, сообщения и передачи Telegram не выполняются. Нажми на баланс сверху, чтобы сменить валюту."
++            var actions: [TextAlertAction] = []
++            if !isSelf {
++                actions.append(TextAlertAction(type: .defaultAction, title: "Подарить визуально · \(currency.symbol) \(price)", action: { [weak self, weak mainController] in
++                    self?.commitPhantomGift(gift, localGift: localGift, recipientName: recipientName, recipientId: recipientId, isSend: true, mainController: mainController)
++                }))
++            }
++            actions.append(TextAlertAction(type: .defaultAction, title: "Купить себе · \(currency.symbol) \(price)", action: { [weak self, weak mainController] in
++                self?.commitPhantomGift(gift, localGift: localGift, recipientName: recipientName, recipientId: recipientId, isSend: false, mainController: mainController)
++            }))
++            let otherCurrency: TeleFlowLocalCurrency = currency == .stars ? .gram : .stars
++            actions.append(TextAlertAction(type: .genericAction, title: "Сменить валюту на \(otherCurrency.symbol)", action: { [weak self] in
++                guard let self else {
++                    return
++                }
++                self.phantomCurrency = otherCurrency
++                self.state?.updated(transition: .immediate)
++            }))
++            actions.append(TextAlertAction(type: .genericAction, title: environment.strings.Common_Cancel, action: {}))
++            let alertController = textAlertController(context: component.context, title: "фантом · \(localGift.name)", text: text, actions: actions)
++            mainController.present(alertController, in: .window(.root))
++        }
++        
++        private func commitPhantomGift(_ gift: StarGift.Gift, localGift: TeleFlowShowcaseGift, recipientName: String, recipientId: Int64, isSend: Bool, mainController: ViewController?) {
++            guard let component = self.component, let environment = self.environment else {
++                return
++            }
++            let currency = self.phantomCurrency
++            let price = localGift.price(for: currency)
++            let balance = TeleFlowGiftStore.shared.balance(currency: currency)
++            guard balance >= price else {
++                let otherCurrency: TeleFlowLocalCurrency = currency == .stars ? .gram : .stars
++                let alertController = textAlertController(
++                    context: component.context,
++                    title: "Не хватает локального баланса",
++                    text: "Доступно: \(currency.symbol) \(balance), нужно: \(currency.symbol) \(price). Пополнить визуальный баланс можно в меню KinopoiskGram. Настоящие звёзды Telegram не используются.",
++                    actions: [
++                        TextAlertAction(type: .defaultAction, title: "Выбрать \(otherCurrency.symbol)", action: { [weak self] in
++                            guard let self else {
++                                return
++                            }
++                            self.phantomCurrency = otherCurrency
++                            self.state?.updated(transition: .immediate)
++                        }),
++                        TextAlertAction(type: .genericAction, title: environment.strings.Common_OK, action: {})
++                    ]
++                )
++                mainController?.present(alertController, in: .window(.root))
++                return
++            }
++            let succeeded: Bool
++            if isSend && component.peerId != component.context.account.peerId {
++                succeeded = TeleFlowGiftStore.shared.giftCatalogGift(localGift, recipientName: recipientName, recipientId: recipientId, currency: currency)
++            } else {
++                succeeded = TeleFlowGiftStore.shared.purchase(localGift, currency: currency)
++            }
++            guard succeeded else {
++                let alertController = textAlertController(context: component.context, title: nil, text: "Локальная операция не выполнена. Проверь получателя и баланс.", actions: [TextAlertAction(type: .defaultAction, title: environment.strings.Common_OK, action: {})])
++                mainController?.present(alertController, in: .window(.root))
++                return
++            }
++            self.state?.updated(transition: .immediate)
++            let text = isSend ? "Визуально подарено: \(recipientName). Запись добавлена в локальные профили и журнал. Настоящий подарок не отправлялся." : "Подарок добавлен в локальную витрину. Настоящая покупка Telegram не выполнялась."
++            let presentationData = component.context.sharedContext.currentPresentationData.with { $0 }
++            let overlayController = UndoOverlayController(presentationData: presentationData, content: .sticker(context: component.context, file: gift.file, loop: true, title: "фантом · готово", text: text, undoText: nil, customAction: nil), action: { _ in return false })
++            mainController?.present(overlayController, in: .current)
++        }
++        
+         private var isInAttachmentMenu: Bool {
+             if let controller = self.environment?.controller() {
+                 return type(of: controller) != GiftOptionsScreen.self
+@@ -656,7 +776,7 @@
+                     }
+                     
+                     if isVisible {
+-                        let itemId = AnyHashable(gift.id)
++                        let itemId = AnyHashable("\(self.starsFilter.rawValue):\(gift.id)")
+                         validIds.append(itemId)
+                         
+                         var itemTransition = transition
+@@ -751,10 +871,25 @@
+                         }
+                         
+                         var lockedUntilDate: Int32?
++                        if self.starsFilter == .phantom {
++                            // Phantom keeps the native artwork and ribbons, but local gifts
++                            // remain actionable even when Telegram marks the original sold out.
++                            isSoldOut = false
++                            isLoading = false
++                        }
+                         let subject: GiftItemComponent.Subject
+                         switch gift {
+                         case let .generic(gift):
+-                            if gift.flags.contains(.isAuction) {
++                            if self.starsFilter == .phantom {
++                                let price = self.phantomGift(for: gift).price(for: self.phantomCurrency)
++                                let priceString = presentationStringsFormattedNumber(Int32(clamping: price), environment.dateTimeFormat.groupingSeparator)
++                                switch self.phantomCurrency {
++                                case .stars:
++                                    subject = .starGift(gift: gift, price: "# \(priceString)")
++                                case .gram:
++                                    subject = .starGift(gift: gift, price: "G \(priceString)")
++                                }
++                            } else if gift.flags.contains(.isAuction) {
+                                 var action = environment.strings.Gift_Options_Gift_JoinAuction
+                                 if let auctionStartDate = gift.auctionStartDate, currentTime < auctionStartDate {
+                                     action = environment.strings.Gift_Options_Gift_ViewAuction
+@@ -772,7 +907,7 @@
+                             } else {
+                                 subject = .starGift(gift: gift, price: "# \(presentationStringsFormattedNumber(Int32(gift.price), environment.dateTimeFormat.groupingSeparator))")
+                             }
+-                            lockedUntilDate = gift.lockedUntilDate
++                            lockedUntilDate = self.starsFilter == .phantom ? nil : gift.lockedUntilDate
+                         case let .unique(gift):
+                             subject = .uniqueGift(gift: gift, price: nil)
+                         }
+@@ -1126,7 +1261,7 @@
+                 self.dismissed = true
+             }
+             
+-            if (state.starGifts ?? []).isEmpty && !(state.transferStarGifts ?? []).isEmpty {
++            if self.starsFilter != .phantom, (state.starGifts ?? []).isEmpty && !(state.transferStarGifts ?? []).isEmpty {
+                 self.starsFilter = .transfer
+             }
+             
+@@ -1301,11 +1436,12 @@
+                 }
+             }
+             
++            let isPhantom = self.starsFilter == .phantom
+             let balanceTitleSize = self.balanceTitle.update(
+                 transition: .immediate,
+                 component: AnyComponent(MultilineTextComponent(
+                     text: .plain(NSAttributedString(
+-                        string: strings.Stars_Purchase_Balance,
++                        string: isPhantom ? "Локальный баланс" : strings.Stars_Purchase_Balance,
+                         font: Font.regular(14.0),
+                         textColor: theme.actionSheet.primaryTextColor
+                     )),
+@@ -1315,10 +1451,17 @@
+                 containerSize: availableSize
+             )
+             
+-            let formattedBalance = formatStarsAmountText(self.starsState?.balance ?? StarsAmount.zero, dateTimeFormat: environment.dateTimeFormat)
++            let localBalance = isPhantom ? TeleFlowGiftStore.shared.balance(currency: self.phantomCurrency) : 0
++            let formattedBalance = isPhantom ? formatStarsAmountText(StarsAmount(value: localBalance, nanos: 0), dateTimeFormat: environment.dateTimeFormat) : formatStarsAmountText(self.starsState?.balance ?? StarsAmount.zero, dateTimeFormat: environment.dateTimeFormat)
+             let smallLabelFont = Font.regular(11.0)
+             let labelFont = Font.semibold(14.0)
+-            let balanceText = tonAmountAttributedString(formattedBalance, integralFont: labelFont, fractionalFont: smallLabelFont, color: theme.actionSheet.primaryTextColor, decimalSeparator: environment.dateTimeFormat.decimalSeparator)
++            let balanceText: NSAttributedString
++            if isPhantom && self.phantomCurrency == .gram {
++                let gramBalance = presentationStringsFormattedNumber(Int32(clamping: localBalance), environment.dateTimeFormat.groupingSeparator)
++                balanceText = NSAttributedString(string: "G \(gramBalance)", font: labelFont, textColor: theme.actionSheet.primaryTextColor)
++            } else {
++                balanceText = tonAmountAttributedString(formattedBalance, integralFont: labelFont, fractionalFont: smallLabelFont, color: theme.actionSheet.primaryTextColor, decimalSeparator: environment.dateTimeFormat.decimalSeparator)
++            }
+             
+             var balanceInset: CGFloat = 16.0
+             if let controller = controller(), controller._hasGlassStyle {
+@@ -1326,18 +1469,42 @@
+             }
+             balanceInset += environment.navigationBarTrailingButtonsInset
+             
++            let balanceContent = AnyComponent(MultilineTextComponent(
++                text: .plain(balanceText),
++                maximumNumberOfLines: 1
++            ))
++            let balanceComponent: AnyComponent
++            if isPhantom {
++                balanceComponent = AnyComponent(PlainButtonComponent(
++                    content: balanceContent,
++                    effectAlignment: .center,
++                    action: { [weak self] in
++                        guard let self else {
++                            return
++                        }
++                        self.phantomCurrency = self.phantomCurrency == .stars ? .gram : .stars
++                        self.state?.updated(transition: .immediate)
++                    },
++                    animateScale: false
++                ))
++            } else {
++                balanceComponent = balanceContent
++            }
+             let balanceValueSize = self.balanceValue.update(
+                 transition: .immediate,
+-                component: AnyComponent(MultilineTextComponent(
+-                    text: .plain(balanceText),
+-                    maximumNumberOfLines: 1
+-                )),
++                component: balanceComponent,
+                 environment: {},
+                 containerSize: availableSize
+             )
++            let balanceIconComponent: AnyComponent
++            if isPhantom && self.phantomCurrency == .gram {
++                balanceIconComponent = AnyComponent(MultilineTextComponent(text: .plain(NSAttributedString(string: "")), maximumNumberOfLines: 1))
++            } else {
++                balanceIconComponent = AnyComponent(BundleIconComponent(name: "Premium/Stars/StarSmall", tintColor: nil))
++            }
+             let balanceIconSize = self.balanceIcon.update(
+                 transition: .immediate,
+-                component: AnyComponent(BundleIconComponent(name: "Premium/Stars/StarSmall", tintColor: nil)),
++                component: balanceIconComponent,
+                 environment: {},
+                 containerSize: availableSize
+             )
+@@ -1398,7 +1565,9 @@
+             
+             var premiumDescriptionRawString: String
+             var isPremiumDescription = false
+-            if isSelfGift {
++            if self.starsFilter == .phantom {
++                premiumDescriptionRawString = "Нативная витрина Telegram с локальными покупками и подарками KinopoiskGram. Списываются только визуальные ⭐ или G; нажми на баланс, чтобы сменить валюту."
++            } else if isSelfGift {
+                 premiumDescriptionRawString = strings.Gift_Options_GiftSelf_Text
+             } else if isChannelGift {
+                 premiumDescriptionRawString = strings.Gift_Options_GiftChannel_Text(peerName).string
+@@ -1714,11 +1883,16 @@
+                 }
+             }
+             
+-            if hasGenericGifts {
++            // TeleFlow: keep the local tab available even if the server catalog is empty.
++            do {
+                 var tabSelectorItems: [TabSelectorComponent.Item] = []
+                 tabSelectorItems.append(TabSelectorComponent.Item(
+                     id: AnyHashable(StarsFilter.all.rawValue),
+                     title: strings.Gift_Options_Gift_Filter_AllGifts
++                ))
++                tabSelectorItems.append(TabSelectorComponent.Item(
++                    id: AnyHashable(StarsFilter.phantom.rawValue),
++                    title: "фантом"
+                 ))
+                 
+                 if hasTransferGifts {
+diff --git a/submodules/TelegramUI/Components/Gifts/GiftOptionsScreen/BUILD b/submodules/TelegramUI/Components/Gifts/GiftOptionsScreen/BUILD
+--- a/submodules/TelegramUI/Components/Gifts/GiftOptionsScreen/BUILD
++++ b/submodules/TelegramUI/Components/Gifts/GiftOptionsScreen/BUILD
+@@ -10,6 +10,7 @@
+         "-warnings-as-errors",
+     ],
+     deps = [
++        "//submodules/TeleFlow",
+         "//submodules/AsyncDisplayKit",
+         "//submodules/Display",
+         "//submodules/TelegramCore",

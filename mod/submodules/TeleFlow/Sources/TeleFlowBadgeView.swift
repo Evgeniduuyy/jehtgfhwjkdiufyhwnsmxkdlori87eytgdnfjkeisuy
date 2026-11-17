@@ -69,7 +69,7 @@ public final class TeleFlowBadgeView: UIView {
             case .app:
                 colors = [UIColor(red: 0.25, green: 0.47, blue: 0.94, alpha: 1.0).cgColor, UIColor(red: 0.16, green: 0.32, blue: 0.78, alpha: 1.0).cgColor]
             case .gram:
-                colors = [UIColor(red: 1.0, green: 0.62, blue: 0.10, alpha: 1.0).cgColor, UIColor(red: 0.93, green: 0.38, blue: 0.05, alpha: 1.0).cgColor]
+                colors = [UIColor(red: 0.20, green: 0.65, blue: 0.78, alpha: 1.0).cgColor, UIColor(red: 0.16, green: 0.38, blue: 0.72, alpha: 1.0).cgColor]
             case .gift:
                 colors = [UIColor(red: 0.92, green: 0.36, blue: 0.72, alpha: 1.0).cgColor, UIColor(red: 0.55, green: 0.24, blue: 0.84, alpha: 1.0).cgColor]
             }
@@ -90,15 +90,12 @@ public final class TeleFlowBadgeView: UIView {
                 UIColor.white.setFill()
                 plane.fill()
             case .gram:
-                // A stylised flame.
-                let flame = UIBezierPath()
-                flame.move(to: CGPoint(x: size * 0.50, y: size * 0.16))
-                flame.addCurve(to: CGPoint(x: size * 0.30, y: size * 0.58), controlPoint1: CGPoint(x: size * 0.26, y: size * 0.36), controlPoint2: CGPoint(x: size * 0.28, y: size * 0.50))
-                flame.addCurve(to: CGPoint(x: size * 0.50, y: size * 0.84), controlPoint1: CGPoint(x: size * 0.32, y: size * 0.72), controlPoint2: CGPoint(x: size * 0.42, y: size * 0.84))
-                flame.addCurve(to: CGPoint(x: size * 0.70, y: size * 0.58), controlPoint1: CGPoint(x: size * 0.58, y: size * 0.84), controlPoint2: CGPoint(x: size * 0.68, y: size * 0.72))
-                flame.addCurve(to: CGPoint(x: size * 0.50, y: size * 0.16), controlPoint1: CGPoint(x: size * 0.72, y: size * 0.50), controlPoint2: CGPoint(x: size * 0.74, y: size * 0.36))
-                UIColor.white.setFill()
-                flame.fill()
+                let text = NSAttributedString(string: "G", attributes: [
+                    .font: UIFont.boldSystemFont(ofSize: size * 0.72),
+                    .foregroundColor: UIColor.white
+                ])
+                let textSize = text.size()
+                text.draw(at: CGPoint(x: (size - textSize.width) * 0.5, y: (size - textSize.height) * 0.5))
             case .gift:
                 // A simple white gift box with a ribbon.
                 let box = UIBezierPath(rect: CGRect(x: size * 0.20, y: size * 0.42, width: size * 0.60, height: size * 0.38))

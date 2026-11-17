@@ -1,0 +1,201 @@
+diff --git a/submodules/ChatListUI/BUILD b/submodules/ChatListUI/BUILD
+index 58a001c..4209969 100644
+--- a/submodules/ChatListUI/BUILD
++++ b/submodules/ChatListUI/BUILD
+@@ -12,6 +12,7 @@ swift_library(
+         "-warnings-as-errors",
+     ],
+     deps = [
++        "//submodules/TeleFlow",
+         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
+         "//submodules/AsyncDisplayKit:AsyncDisplayKit",
+         "//submodules/Display:Display",
+diff --git a/submodules/ChatListUI/Sources/ChatListSearchListPaneNode.swift b/submodules/ChatListUI/Sources/ChatListSearchListPaneNode.swift
+index c6ea851..68b3d2e 100644
+--- a/submodules/ChatListUI/Sources/ChatListSearchListPaneNode.swift
++++ b/submodules/ChatListUI/Sources/ChatListSearchListPaneNode.swift
+@@ -1,5 +1,6 @@
+ import Foundation
+ import UIKit
++import TeleFlow
+ import AsyncDisplayKit
+ import Display
+ import TelegramCore
+@@ -3370,7 +3371,7 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
+ 
+                 var numberOfGlobalPeers = 0
+                 index = 0
+-                if !adsHidden {
++                if !adsHidden && !TeleFlowSettings.shared.hideSearchAds {
+                     for peer in foundRemotePeers.2 {
+                         if !existingPeerIds.contains(peer.peer.id), filteredPeer(peer.peer, EnginePeer(accountPeer)) {
+                             existingPeerIds.insert(peer.peer.id)
+diff --git a/submodules/TelegramCore/Sources/Network/MultipartFetch.swift b/submodules/TelegramCore/Sources/Network/MultipartFetch.swift
+index 75d6f4f..51414e8 100644
+--- a/submodules/TelegramCore/Sources/Network/MultipartFetch.swift
++++ b/submodules/TelegramCore/Sources/Network/MultipartFetch.swift
+@@ -1,6 +1,7 @@
+ import Foundation
+ import Postbox
+ import SwiftSignalKit
++internal import TeleFlow
+ internal import TelegramApi
+ import MtProtoKit
+ import RangeSet
+@@ -501,7 +502,7 @@ private final class MultipartFetchManager {
+         }
+     }
+     
+-    let parallelParts: Int
++    var parallelParts: Int
+     let defaultPartSize: Int64
+     var partAlignment: Int64 = 4 * 1024
+     
+@@ -592,6 +593,18 @@ private final class MultipartFetchManager {
+             self.defaultPartSize = 128 * 1024
+         }
+         
++        let configuredParallelParts: Int
++        if isStory {
++            configuredParallelParts = TeleFlowSettings.shared.downloadStoryStreams
++        } else if let size {
++            configuredParallelParts = size <= 512 * 1024 ? TeleFlowSettings.shared.downloadSmallFileStreams : TeleFlowSettings.shared.downloadBigFileStreams
++        } else {
++            configuredParallelParts = 0
++        }
++        if configuredParallelParts > 0 {
++            self.parallelParts = configuredParallelParts
++        }
++        
+         if let info = parameters?.info as? TelegramCloudMediaResourceFetchInfo {
+             self.fileReference = info.reference.apiFileReference
+             self.continueInBackground = info.continueInBackground
+diff --git a/submodules/TelegramCore/Sources/Network/MultipartUpload.swift b/submodules/TelegramCore/Sources/Network/MultipartUpload.swift
+--- a/submodules/TelegramCore/Sources/Network/MultipartUpload.swift
++++ b/submodules/TelegramCore/Sources/Network/MultipartUpload.swift
+@@ -2,6 +2,7 @@
+ import Postbox
+ internal import TelegramApi
+ import SwiftSignalKit
++internal import TeleFlow
+ import MtProtoKit
+ import CryptoUtils
+ import ManagedFile
+@@ -116,7 +117,7 @@
+ }
+ 
+ final class MultipartUploadManager {
+-    let parallelParts: Int
++    var parallelParts: Int
+     var defaultPartSize: Int64
+     var bigTotalParts: Int?
+     var bigParts: Bool
+@@ -193,6 +194,11 @@
+             self.defaultPartSize = 128 * 1024
+             self.bigTotalParts = nil
+         }
++        
++        let configuredParallelParts = self.bigParts ? TeleFlowSettings.shared.uploadBigFileStreams : TeleFlowSettings.shared.uploadSmallFileStreams
++        if configuredParallelParts > 0 {
++            self.parallelParts = configuredParallelParts
++        }
+     }
+     
+     deinit {
+@@ -250,6 +256,11 @@
+                     self.bigTotalParts = nil
+                 }
+             }
++        }
++        
++        let resolvedParallelParts = self.bigParts ? TeleFlowSettings.shared.uploadBigFileStreams : TeleFlowSettings.shared.uploadSmallFileStreams
++        if resolvedParallelParts > 0 {
++            self.parallelParts = resolvedParallelParts
+         }
+         
+         var updatedCommittedOffset = false
+diff --git a/submodules/TelegramCore/Sources/State/SynchronizeRecentlyUsedMediaOperations.swift b/submodules/TelegramCore/Sources/State/SynchronizeRecentlyUsedMediaOperations.swift
+index fe1b573..4714f01 100644
+--- a/submodules/TelegramCore/Sources/State/SynchronizeRecentlyUsedMediaOperations.swift
++++ b/submodules/TelegramCore/Sources/State/SynchronizeRecentlyUsedMediaOperations.swift
+@@ -1,6 +1,7 @@
+ import Foundation
+ import Postbox
+ import SwiftSignalKit
++internal import TeleFlow
+ 
+ 
+ enum RecentlyUsedMediaCategory {
+@@ -40,7 +41,7 @@ func addSynchronizeRecentlyUsedMediaOperation(transaction: Transaction, category
+ func addRecentlyUsedSticker(transaction: Transaction, fileReference: FileMediaReference) {
+     if let resource = fileReference.media.resource as? CloudDocumentMediaResource {
+         if let entry = CodableEntry(RecentMediaItem(fileReference.media)) {
+-            transaction.addOrMoveToFirstPositionOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStickers, item: OrderedItemListEntry(id: RecentMediaItemId(fileReference.media.fileId).rawValue, contents: entry), removeTailIfCountExceeds: 20)
++            transaction.addOrMoveToFirstPositionOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStickers, item: OrderedItemListEntry(id: RecentMediaItemId(fileReference.media.fileId).rawValue, contents: entry), removeTailIfCountExceeds: TeleFlowSettings.shared.unlimitedRecentStickers ? nil : 20)
+         }
+         addSynchronizeRecentlyUsedMediaOperation(transaction: transaction, category: .stickers, operation: .add(id: resource.fileId, accessHash: resource.accessHash, fileReference: fileReference))
+     }
+diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Stickers/SavedStickers.swift b/submodules/TelegramCore/Sources/TelegramEngine/Stickers/SavedStickers.swift
+index 46844ba..09891ce 100644
+--- a/submodules/TelegramCore/Sources/TelegramEngine/Stickers/SavedStickers.swift
++++ b/submodules/TelegramCore/Sources/TelegramEngine/Stickers/SavedStickers.swift
+@@ -2,6 +2,7 @@ import Foundation
+ import Postbox
+ internal import TelegramApi
+ import SwiftSignalKit
++internal import TeleFlow
+ 
+ public enum SavedStickerResult {
+     case generic
+@@ -35,16 +36,18 @@ func _internal_saveStickerWithResult(postbox: Postbox, network: Network, account
+         let limitsConfiguration = UserLimitsConfiguration(appConfiguration: appConfiguration, isPremium: false)
+         let premiumLimitsConfiguration = UserLimitsConfiguration(appConfiguration: appConfiguration, isPremium: true)
+ 
++        let unlimitedFavorites = TeleFlowSettings.shared.unlimitedFavoriteStickers
+         let result: SavedStickerResult
+-        if isPremium && items.count >= premiumLimitsConfiguration.maxFavedStickerCount {
++        if !unlimitedFavorites && isPremium && items.count >= premiumLimitsConfiguration.maxFavedStickerCount {
+             result = .limitExceeded(premiumLimitsConfiguration.maxFavedStickerCount, premiumLimitsConfiguration.maxFavedStickerCount)
+-        } else if !isPremium && items.count >= limitsConfiguration.maxFavedStickerCount {
++        } else if !unlimitedFavorites && !isPremium && items.count >= limitsConfiguration.maxFavedStickerCount {
+             result = .limitExceeded(limitsConfiguration.maxFavedStickerCount, premiumLimitsConfiguration.maxFavedStickerCount)
+         } else {
+             result = .generic
+         }
+ 
+-        return addSavedStickerWithResult(postbox: postbox, network: network, file: file, limit: Int(isPremium ? premiumLimitsConfiguration.maxFavedStickerCount : limitsConfiguration.maxFavedStickerCount))
++        let localLimit = unlimitedFavorites ? Int.max : Int(isPremium ? premiumLimitsConfiguration.maxFavedStickerCount : limitsConfiguration.maxFavedStickerCount)
++        return addSavedStickerWithResult(postbox: postbox, network: network, file: file, limit: localLimit)
+         |> map { locallyApplied in
+             return SavedStickerUpdateResult(result: result, locallyApplied: locallyApplied)
+         }
+diff --git a/submodules/TelegramCore/Sources/State/SynchronizeSavedStickersOperation.swift b/submodules/TelegramCore/Sources/State/SynchronizeSavedStickersOperation.swift
+--- a/submodules/TelegramCore/Sources/State/SynchronizeSavedStickersOperation.swift
++++ b/submodules/TelegramCore/Sources/State/SynchronizeSavedStickersOperation.swift
+@@ -72,7 +72,7 @@
+                             if stickerItem.file.fileId == file.fileId {
+                                 let stringRepresentations = stickerItem.getStringRepresentationsOfIndexKeys()
+                                 found = true
+-                                let applied = addSavedStickerWithResult(transaction: transaction, file: stickerItem.file._parse(), stringRepresentations: stringRepresentations)
++                                let applied = addSavedStickerWithResult(transaction: transaction, file: stickerItem.file._parse(), stringRepresentations: stringRepresentations, limit: limit)
+                                 locallyApplied?(applied)
+                                 break inner
+                             }
+@@ -115,7 +115,7 @@
+                             }
+                             if let stickerStringRepresentations = stickerStringRepresentations {
+                                 return postbox.transaction { transaction -> Void in
+-                                    let applied = addSavedStickerWithResult(transaction: transaction, file: file, stringRepresentations: stickerStringRepresentations)
++                                    let applied = addSavedStickerWithResult(transaction: transaction, file: file, stringRepresentations: stickerStringRepresentations, limit: limit)
+                                     locallyApplied?(applied)
+                                 } |> mapError { _ -> AddSavedStickerError in }
+                             } else {
+@@ -126,7 +126,7 @@
+                     return .complete()
+                 } else {
+                     return postbox.transaction { transaction -> Void in
+-                        let applied = addSavedStickerWithResult(transaction: transaction, file: file, stringRepresentations: [])
++                        let applied = addSavedStickerWithResult(transaction: transaction, file: file, stringRepresentations: [], limit: limit)
+                         locallyApplied?(applied)
+                     } |> mapError { _ -> AddSavedStickerError in }
+                 }

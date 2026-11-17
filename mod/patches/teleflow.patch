@@ -93,7 +93,7 @@ index 7256668b..cd2a4c9c 100644
 -    private func updatePresence(_ isOnline: Bool) {
 +    private func updatePresence(_ isOnlineValue: Bool) {
 +        // TeleFlow ghost: always report offline
-+        let isOnline = isOnlineValue && !TeleFlowSettings.shared.ghostHideOnline
++        let isOnline = (isOnlineValue || TeleFlowSettings.shared.ghostAlwaysOnline) && !TeleFlowSettings.shared.ghostHideOnline
          let request: Signal<Api.Bool, MTRpcError>
          if isOnline {
              let timer = SignalKitTimer(timeout: 30.0, repeat: false, completion: { [weak self] in
@@ -107,15 +107,21 @@ index e8e08874..d5d0126a 100644
  import Postbox
  import SwiftSignalKit
  internal import TelegramApi
-@@ -142,6 +143,13 @@ private func actionFromActivity(_ activity: PeerInputActivity?) -> Api.SendMessa
+@@ -142,6 +143,19 @@ private func actionFromActivity(_ activity: PeerInputActivity?) -> Api.SendMessa
  }
  
  private func requestActivity(postbox: Postbox, network: Network, accountPeerId: PeerId, peerId: PeerId, threadId: Int64?, activity: PeerInputActivity?) -> Signal<Void, NoError> {
-+    // TeleFlow ghost: don't tell anyone we're typing
-+    if TeleFlowSettings.shared.ghostHideTyping {
-+        if let activity = activity, case .speakingInGroupCall = activity {
-+        } else {
-+            return .complete()
++    // TeleFlow ghost: independently suppress typing, recording and uploads.
++    if let activity = activity {
++        switch activity {
++        case .recordingVoice, .recordingInstantVideo:
++            if TeleFlowSettings.shared.ghostHideRecording { return .complete() }
++        case .uploadingFile(_), .uploadingPhoto(_), .uploadingVideo(_), .uploadingInstantVideo(_):
++            if TeleFlowSettings.shared.ghostHideUploading { return .complete() }
++        case .speakingInGroupCall:
++            break
++        default:
++            if TeleFlowSettings.shared.ghostHideTyping { return .complete() }
 +        }
 +    }
      return postbox.transaction { transaction -> Signal<Void, NoError> in

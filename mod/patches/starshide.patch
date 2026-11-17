@@ -1,0 +1,21 @@
+diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
+index 8e3f9d2..8a3e65d 100644
+--- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
++++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
+@@ -12,6 +12,7 @@ import ItemListPeerItem
+ import DeviceAccess
+ import TelegramStringFormatting
+ import PeerNameColorItem
++import TeleFlow
+ import WalletContext
+ 
+ enum SettingsSection: Int, CaseIterable {
+@@ -288,7 +289,7 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
+         }))
+     }
+     if let starsState = data.starsState {
+-        if !isPremiumDisabled || abs(starsState.balance.value) > 0 {
++        if !TeleFlowSettings.shared.hideMyStars && (!isPremiumDisabled || abs(starsState.balance.value) > 0) {
+             let balanceText: NSAttributedString
+             if abs(starsState.balance.value) > 0 {
+                 let formattedLabel = formatStarsAmountText(starsState.balance, dateTimeFormat: presentationData.dateTimeFormat)

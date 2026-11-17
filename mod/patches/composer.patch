@@ -1,0 +1,50 @@
+diff --git a/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/BUILD b/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/BUILD
+index ab3187b..6211f67 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/BUILD
++++ b/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/BUILD
+@@ -19,6 +19,7 @@ swift_library(
+         "-warnings-as-errors",
+     ],
+     deps = [
++        "//submodules/TeleFlow",
+         "//submodules/Display",
+         "//submodules/AsyncDisplayKit",
+         "//submodules/SSignalKit/SwiftSignalKit",
+diff --git a/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift b/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift
+index 834a34c..7955e20 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift
+@@ -1,4 +1,5 @@
+ import Foundation
++import TeleFlow
+ import UniformTypeIdentifiers
+ import UIKit
+ import Display
+@@ -4581,6 +4582,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
+             }
+         }
+         
++        let showsTeleFlowCounter = inputTextMaxLength == nil && TeleFlowSettings.shared.showTypingCharacterCounter && self.presentationInterfaceState != nil
+         if let presentationInterfaceState = self.presentationInterfaceState, let inputTextMaxLength {
+             let textCount = Int32(self.richTextInputNode?.text.count ?? 0)
+             let counterColor: UIColor = textCount > inputTextMaxLength ? presentationInterfaceState.theme.chat.inputPanel.panelControlDestructiveColor : presentationInterfaceState.theme.chat.inputPanel.panelControlColor
+@@ -4588,14 +4590,17 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
+             let remainingCount = max(-999, inputTextMaxLength - textCount)
+             let counterText = remainingCount >= 5 ? "" : "\(remainingCount)"
+             self.counterTextNode.attributedText = NSAttributedString(string: counterText, font: counterFont, textColor: counterColor)
++        } else if showsTeleFlowCounter, let presentationInterfaceState = self.presentationInterfaceState {
++            let textCount = self.richTextInputNode?.text.count ?? 0
++            self.counterTextNode.attributedText = NSAttributedString(string: "\(textCount)", font: counterFont, textColor: presentationInterfaceState.theme.chat.inputPanel.panelControlColor)
+         } else {
+             self.counterTextNode.attributedText = NSAttributedString(string: "", font: counterFont, textColor: .black)
+         }
+             
+-        let counterSize = self.counterTextNode.updateLayout(CGSize(width: 40.0, height: 40.0))
++        let counterSize = self.counterTextNode.updateLayout(CGSize(width: 64.0, height: 40.0))
+         let counterFrame = CGRect(origin: CGPoint(x: backgroundSize.width - 11.0 - counterSize.width, y: 4.0), size: CGSize(width: counterSize.width, height: counterSize.height))
+         transition.updateFrame(node: self.counterTextNode, frame: counterFrame)
+-        transition.updateAlpha(node: self.counterTextNode, alpha: backgroundSize.height > 50.0 ? 1.0 : 0.0)
++        transition.updateAlpha(node: self.counterTextNode, alpha: backgroundSize.height > 50.0 || showsTeleFlowCounter ? 1.0 : 0.0)
+     }
+     
+     private func installEmojiSuggestionPreviewGesture(hostView: UIView) {

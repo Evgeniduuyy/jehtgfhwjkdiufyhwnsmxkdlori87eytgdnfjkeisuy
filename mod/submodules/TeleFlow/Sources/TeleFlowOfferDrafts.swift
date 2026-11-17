@@ -220,7 +220,7 @@ extension TeleFlowMenu {
             return [
                 TeleFlowSection(header: "Premium emoji ID", footer: "Можно ввести просто ID или формат «* - ID». Значения сохраняются отдельно для текущего аккаунта и показываются в локальной карточке.", rows: [
                     TeleFlowMenu.offerEmojiRow(title: "Звезда ⭐", get: { store.starEmojiId }, set: { store.starEmojiId = $0 }),
-                    TeleFlowMenu.offerEmojiRow(title: "Грамм 🔥", get: { store.gramEmojiId }, set: { store.gramEmojiId = $0 }),
+                    TeleFlowMenu.offerEmojiRow(title: "Грамм", get: { store.gramEmojiId }, set: { store.gramEmojiId = $0 }),
                     TeleFlowMenu.offerEmojiRow(title: "Подарок 🎁", get: { store.giftEmojiId }, set: { store.giftEmojiId = $0 })
                 ])
             ]

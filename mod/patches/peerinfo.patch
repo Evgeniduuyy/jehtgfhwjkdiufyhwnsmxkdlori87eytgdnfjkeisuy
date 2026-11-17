@@ -11,7 +11,7 @@ index bd33bb7..d18435b 100644
      visibility = [
          "//visibility:public",
 diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift
-index 7751e79..feac3e5 100644
+index 7751e79..a5f2251 100644
 --- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift
 +++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift
 @@ -28,6 +28,7 @@ import MultiAnimationRenderer
@@ -22,11 +22,11 @@ index 7751e79..feac3e5 100644
  import AvatarVideoNode
  import PeerInfoVisualMediaPaneNode
  import AvatarStoryIndicatorComponent
-@@ -156,6 +157,15 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -156,6 +157,17 @@ final class PeerInfoHeaderNode: ASDisplayNode {
      var subtitleBackgroundButton: HighlightTrackingButtonNode?
      var subtitleArrowNode: ASImageNode?
      var subtitleBadgeView: PeerInfoSubtitleBadgeView?
-+    /// TeleFlow: the "Пользователь KinopoiskGram" badge shown in other people's profiles.
++    /// TeleFlow: shown only on your own profile, where the installed client is known.
 +    var teleFlowBadgeView: TeleFlowBadgeView?
 +    var teleFlowBadgeSize: CGSize?
 +    /// TeleFlow: the local gram balance pill shown in your own profile.
@@ -35,10 +35,12 @@ index 7751e79..feac3e5 100644
 +    /// TeleFlow: local visual gifts pinned to your profile or sent to this peer.
 +    var teleFlowGiftsView: TeleFlowBadgeView?
 +    var teleFlowGiftsSize: CGSize?
++    /// TeleFlow: true when your name color supplies the local profile background.
++    private(set) var teleFlowHasPersonalProfileBackground = false
      let panelSubtitleNode: MultiScaleTextNode
      let usernameNodeContainer: ASDisplayNode
      let usernameNodeRawContainer: ASDisplayNode
-@@ -201,6 +211,15 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -201,6 +213,15 @@ final class PeerInfoHeaderNode: ASDisplayNode {
          if let view = self.subtitleBadgeView {
              views.append(view)
          }
@@ -54,7 +56,118 @@ index 7751e79..feac3e5 100644
          if let view = self.subtitleRating?.view {
              views.append(view)
          }
-@@ -1259,7 +1278,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -486,6 +507,20 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+         
+         let phoneGestureRecognizer = UILongPressGestureRecognizer(target: self, action: #selector(self.handlePhoneLongPress(_:)))
+         self.subtitleNodeRawContainer.view.addGestureRecognizer(phoneGestureRecognizer)
++        
++        let peerIdGestureRecognizer = UITapGestureRecognizer(target: self, action: #selector(self.handlePeerIdTap(_:)))
++        peerIdGestureRecognizer.cancelsTouchesOnView = false
++        self.subtitleNodeRawContainer.view.addGestureRecognizer(peerIdGestureRecognizer)
++    }
++    
++    @objc private func handlePeerIdTap(_ gestureRecognizer: UITapGestureRecognizer) {
++        guard gestureRecognizer.state == .ended, TeleFlowSettings.shared.showPeerIdInProfile, let peer = self.peer else {
++            return
++        }
++        let peerId = peer.id.id._internalGetInt64Value()
++        if peerId != 0 {
++            UIPasteboard.general.string = String(peerId)
++        }
+     }
+     
+     @objc private func handleUsernameLongPress(_ gestureRecognizer: UILongPressGestureRecognizer) {
+@@ -660,6 +695,27 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+         let actionButtonKeys: [PeerInfoHeaderButtonKey] = (self.isSettings || self.isMyProfile) ? [] : peerInfoHeaderActionButtons(peer: peer, isSecretChat: isSecretChat, isContact: isContact)
+         let buttonKeys: [PeerInfoHeaderButtonKey] = (self.isSettings || self.isMyProfile) ? [] : peerInfoHeaderButtons(peer: peer, cachedData: cachedData, isOpenedFromChat: self.isOpenedFromChat, isExpanded: true, videoCallsEnabled: width > 320.0 && self.videoCallsEnabled, isSecretChat: isSecretChat, isContact: isContact, threadInfo: threadData?.info)
+         
++        // TeleFlow: use the stock profile color first. On your own profile only,
++        // optionally fall back to the personal name color when no profile color is set.
++        var profileBackgroundColors: PeerNameColors.Colors?
++        if let profileColor = peer?.effectiveProfileColor {
++            profileBackgroundColors = self.context.peerNameColors.getProfile(profileColor, dark: presentationData.theme.overallDarkAppearance)
++        }
++        self.teleFlowHasPersonalProfileBackground = false
++        if profileBackgroundColors == nil,
++           TeleFlowSettings.shared.personalProfileBackground,
++           self.isSettings || self.isMyProfile,
++           let nameColor = peer?.nameColor {
++            switch nameColor {
++            case let .preset(color):
++                profileBackgroundColors = self.context.peerNameColors.get(color, dark: presentationData.theme.overallDarkAppearance)
++            case let .collectible(color):
++                profileBackgroundColors = color.peerNameColors(dark: presentationData.theme.overallDarkAppearance)
++            }
++            self.teleFlowHasPersonalProfileBackground = profileBackgroundColors != nil
++        }
++        let hasProfileBackground = profileBackgroundColors != nil
++        
+         let backgroundCoverSubject: PeerInfoCoverComponent.Subject?
+         var backgroundCoverAnimateIn = false
+         var backgroundDefaultHeight: CGFloat = 254.0
+@@ -680,10 +736,12 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+             }
+             hasBackground = true
+         } else if let peer {
+-            backgroundCoverSubject = .peer(peer)
+-            if peer.effectiveProfileColor != nil {
+-                hasBackground = true
++            if self.teleFlowHasPersonalProfileBackground, let backgroundColors = profileBackgroundColors {
++                backgroundCoverSubject = .custom(backgroundColors.main, backgroundColors.secondary, backgroundColors.tertiary, peer.profileBackgroundEmojiId)
++            } else {
++                backgroundCoverSubject = .peer(peer)
+             }
++            hasBackground = hasProfileBackground
+         } else {
+             backgroundCoverSubject = nil
+         }
+@@ -748,11 +806,11 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+         
+         let avatarFrame = CGRect(origin: CGPoint(x: hasStrip ? bandCenteredOrigin(width: avatarSize, margin: 16.0) : floor((width - avatarSize) / 2.0), y: statusBarHeight + 22.0), size: CGSize(width: avatarSize, height: avatarSize))
+         
+-        let regularNavigationContentsAccentColor: UIColor = peer?.effectiveProfileColor != nil ? .white : presentationData.theme.list.itemAccentColor
++        let regularNavigationContentsAccentColor: UIColor = hasProfileBackground ? .white : presentationData.theme.list.itemAccentColor
+         let collapsedHeaderNavigationContentsAccentColor = presentationData.theme.list.itemAccentColor
+         let expandedAvatarNavigationContentsAccentColor: UIColor = .white
+         
+-        let regularNavigationContentsPrimaryColor: UIColor = peer?.effectiveProfileColor != nil ? .white : presentationData.theme.list.itemPrimaryTextColor
++        let regularNavigationContentsPrimaryColor: UIColor = hasProfileBackground ? .white : presentationData.theme.list.itemPrimaryTextColor
+         let collapsedHeaderNavigationContentsPrimaryColor = presentationData.theme.list.itemPrimaryTextColor
+         let expandedAvatarNavigationContentsPrimaryColor: UIColor = .white
+         
+@@ -764,7 +822,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+         let collapsedHeaderButtonBackgroundColor: UIColor = .clear
+         let expandedAvatarHeaderButtonBackgroundColor: UIColor = UIColor(white: 0.0, alpha: 0.5)
+         
+-        let regularContentButtonForegroundColor: UIColor = peer?.effectiveProfileColor != nil ? UIColor.white : presentationData.theme.list.itemAccentColor
++        let regularContentButtonForegroundColor: UIColor = hasProfileBackground ? UIColor.white : presentationData.theme.list.itemAccentColor
+         let collapsedHeaderContentButtonForegroundColor = presentationData.theme.list.itemAccentColor
+         let expandedAvatarContentButtonForegroundColor: UIColor = .white
+         
+@@ -786,8 +844,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+             regularHeaderButtonBackgroundColor = baseButtonBackgroundColor.blendOver(background: secondaryColor.mixedWith(mainColor, alpha: 0.1))
+             
+             hasCoverColor = true
+-        } else if let profileColor = peer?.effectiveProfileColor {
+-            let backgroundColors = self.context.peerNameColors.getProfile(profileColor, dark: presentationData.theme.overallDarkAppearance)
++        } else if let backgroundColors = profileBackgroundColors {
+             regularNavigationContentsSecondaryColor = UIColor(white: 1.0, alpha: 0.6).blitOver(backgroundColors.main.withMultiplied(hue: 1.0, saturation: 2.2, brightness: 1.5), alpha: 1.0)
+             
+             let baseButtonBackgroundColor: UIColor
+@@ -978,11 +1035,9 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+                 let patternColor = UIColor(rgb: UInt32(bitPattern: patternColorValue))
+                 ratingBorderColor = patternColor.withAlphaComponent(0.1).blendOver(background: backgroundColor).mixedWith(.clear, alpha: effectiveTransitionFraction)
+                 ratingForegroundColor = ratingBorderColor.mixedWith(presentationData.theme.list.itemCheckColors.foregroundColor, alpha: effectiveTransitionFraction)
+-            } else if let profileColor = peer?.effectiveProfileColor {
++            } else if let backgroundColors = profileBackgroundColors {
+                 ratingBackgroundColor = UIColor(white: 1.0, alpha: 1.0).mixedWith(presentationData.theme.list.itemCheckColors.fillColor, alpha: effectiveTransitionFraction)
+                 
+-                let backgroundColors = self.context.peerNameColors.getProfile(profileColor, dark: presentationData.theme.overallDarkAppearance)
+-                
+                 let innerColor = backgroundColors.main
+                 let outerColor = backgroundColors.secondary ?? backgroundColors.main
+                 let backgroundColor = innerColor.mixedWith(outerColor, alpha: 0.8)
+@@ -1259,7 +1314,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
          let titleStringText: String
          let smallTitleAttributes: MultiScaleTextState.Attributes
          let titleAttributes: MultiScaleTextState.Attributes
@@ -63,7 +176,7 @@ index 7751e79..feac3e5 100644
          var subtitleAttributedText: NSAttributedString?
          let smallSubtitleAttributes: MultiScaleTextState.Attributes
          let subtitleAttributes: MultiScaleTextState.Attributes
-@@ -1433,6 +1452,14 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -1433,6 +1488,25 @@ final class PeerInfoHeaderNode: ASDisplayNode {
              usernameString = ("", MultiScaleTextState.Attributes(font: Font.regular(16.0), color: .white))
          }
          
@@ -71,24 +184,31 @@ index 7751e79..feac3e5 100644
 +        if TeleFlowSettings.shared.showPeerIdInProfile, let peer = peer {
 +            let teleFlowPeerId = peer.id.id._internalGetInt64Value()
 +            if teleFlowPeerId != 0 {
-+                subtitleStringText = subtitleStringText + " • ID: " + String(teleFlowPeerId)
++                let suffix = " • ID: \(teleFlowPeerId)"
++                subtitleStringText += suffix
++                if let subtitleAttributedText {
++                    let updatedSubtitle = NSMutableAttributedString(attributedString: subtitleAttributedText)
++                    var attributes: [NSAttributedString.Key: Any] = [:]
++                    if updatedSubtitle.length > 0 {
++                        attributes = updatedSubtitle.attributes(at: updatedSubtitle.length - 1, effectiveRange: nil)
++                        attributes.removeValue(forKey: .attachment)
++                    }
++                    updatedSubtitle.append(NSAttributedString(string: suffix, attributes: attributes))
++                    subtitleAttributedText = updatedSubtitle
++                }
 +            }
 +        }
 +        
          let textSideInset: CGFloat = 36.0
          let expandedAvatarHeight: CGFloat = expandedAvatarListSize.height
          
-@@ -1694,6 +1721,72 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -1694,6 +1768,68 @@ final class PeerInfoHeaderNode: ASDisplayNode {
              subtitleBadgeView.removeFromSuperview()
          }
          
-+        // TeleFlow: "Пользователь KinopoiskGram" badge in other people's profiles.
-+        var teleFlowShowBadge = false
-+        if let peer = peer, TeleFlowSettings.shared.showKinopoiskBadge, !(self.isSettings || self.isMyProfile), peer.id != self.context.account.peerId {
-+            if case .user = peer {
-+                teleFlowShowBadge = true
-+            }
-+        }
++        // TeleFlow: Telegram does not expose another user's installed client. Only
++        // mark our own profile, where running KinopoiskGram is known for certain.
++        let teleFlowShowBadge = TeleFlowSettings.shared.showKinopoiskBadge && (self.isSettings || self.isMyProfile)
 +        if teleFlowShowBadge {
 +            let teleFlowBadgeView: TeleFlowBadgeView
 +            if let current = self.teleFlowBadgeView {
@@ -116,7 +236,7 @@ index 7751e79..feac3e5 100644
 +                self.teleFlowGramView = teleFlowGramView
 +                self.subtitleNodeContainer.view.addSubview(teleFlowGramView)
 +            }
-+            teleFlowGramSize = teleFlowGramView.update(text: "\(TeleFlowSettings.shared.localGramValue)", icon: .gram)
++            teleFlowGramSize = teleFlowGramView.update(text: "Gram: \(TeleFlowSettings.shared.localGramValue)", icon: .gram)
 +        } else if let teleFlowGramView = self.teleFlowGramView {
 +            teleFlowGramView.removeFromSuperview()
 +            self.teleFlowGramView = nil
@@ -151,61 +271,42 @@ index 7751e79..feac3e5 100644
          var titleHorizontalOffset: CGFloat = 0.0
          var titleExpandedHorizontalOffset: CGFloat = 0.0
          var nextIconX: CGFloat = titleSize.width
-@@ -1811,6 +1904,15 @@ final class PeerInfoHeaderNode: ASDisplayNode {
-             if let subtitleBadgeSize {
-                 effectiveSubtitleWidth += (subtitleBadgeSize.width + 7.0) * (1.0 - titleCollapseFraction)
-             }
-+            if let teleFlowBadgeSize {
-+                effectiveSubtitleWidth += (teleFlowBadgeSize.width + 8.0) * (1.0 - titleCollapseFraction)
-+            }
-+            if let teleFlowGramSize {
-+                effectiveSubtitleWidth += (teleFlowGramSize.width + 8.0) * (1.0 - titleCollapseFraction)
-+            }
-+            if let teleFlowGiftsSize {
-+                effectiveSubtitleWidth += (teleFlowGiftsSize.width + 8.0) * (1.0 - titleCollapseFraction)
-+            }
-             
-             let totalSubtitleWidth = effectiveSubtitleWidth + usernameSpacing + usernameSize.width
-             if usernameSize.width == 0.0 {
-@@ -2170,6 +2272,45 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+@@ -2084,6 +2220,13 @@ final class PeerInfoHeaderNode: ASDisplayNode {
+             let existingHeaderExtension: CGFloat = self.isMyProfile ? 20.0 : 99.0
+             panelWithAvatarHeight = balanceBottom + contentBelowBalance - navigationHeight - existingHeaderExtension
+         }
++        
++        // TeleFlow: reserve vertical space for the badge, local Gram wallet and gifts.
++        let teleFlowStackSizes = [teleFlowBadgeSize, teleFlowGramSize, teleFlowGiftsSize].compactMap { $0 }
++        if !teleFlowStackSizes.isEmpty {
++            let stackHeight = teleFlowStackSizes.reduce(CGFloat(0.0)) { $0 + $1.height }
++            panelWithAvatarHeight += 12.0 + stackHeight + CGFloat(teleFlowStackSizes.count - 1) * 6.0
++        }
+ 
+         let rawHeight: CGFloat
+         let height: CGFloat
+@@ -2170,6 +2313,28 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                  transition.updateAlpha(layer: subtitleBadgeView.layer, alpha: subtitleBadgeFraction)
              }
              
++            // TeleFlow: like separate lines below the presence, with a blank-line gap.
++            var teleFlowNextY = max(rawSubtitleFrame.maxY, rawUsernameFrame.maxY) + 12.0 - rawSubtitleFrame.center.y
 +            if let teleFlowBadgeView = self.teleFlowBadgeView, let teleFlowBadgeSize {
-+                var teleFlowBadgeX = (subtitleSize.width + 8.0) * 0.5
-+                if let subtitleBadgeSize {
-+                    teleFlowBadgeX += subtitleBadgeSize.width + 8.0
-+                }
-+                let teleFlowBadgeFrame = CGRect(origin: CGPoint(x: teleFlowBadgeX, y: floor((-teleFlowBadgeSize.height) * 0.5)), size: teleFlowBadgeSize)
++                let teleFlowBadgeFrame = CGRect(origin: CGPoint(x: -teleFlowBadgeSize.width * 0.5, y: teleFlowNextY), size: teleFlowBadgeSize)
 +                transition.updateFrameAdditive(view: teleFlowBadgeView, frame: teleFlowBadgeFrame)
 +                transition.updateAlpha(layer: teleFlowBadgeView.layer, alpha: subtitleBadgeFraction)
++                teleFlowNextY += teleFlowBadgeSize.height + 6.0
 +            }
 +            
 +            if let teleFlowGramView = self.teleFlowGramView, let teleFlowGramSize {
-+                var teleFlowGramX = (subtitleSize.width + 8.0) * 0.5
-+                if let subtitleBadgeSize {
-+                    teleFlowGramX += subtitleBadgeSize.width + 8.0
-+                }
-+                if let teleFlowBadgeSize {
-+                    teleFlowGramX += teleFlowBadgeSize.width + 8.0
-+                }
-+                let teleFlowGramFrame = CGRect(origin: CGPoint(x: teleFlowGramX, y: floor((-teleFlowGramSize.height) * 0.5)), size: teleFlowGramSize)
++                let teleFlowGramFrame = CGRect(origin: CGPoint(x: -teleFlowGramSize.width * 0.5, y: teleFlowNextY), size: teleFlowGramSize)
 +                transition.updateFrameAdditive(view: teleFlowGramView, frame: teleFlowGramFrame)
 +                transition.updateAlpha(layer: teleFlowGramView.layer, alpha: subtitleBadgeFraction)
++                teleFlowNextY += teleFlowGramSize.height + 6.0
 +            }
 +            
 +            if let teleFlowGiftsView = self.teleFlowGiftsView, let teleFlowGiftsSize {
-+                var teleFlowGiftsX = (subtitleSize.width + 8.0) * 0.5
-+                if let subtitleBadgeSize {
-+                    teleFlowGiftsX += subtitleBadgeSize.width + 8.0
-+                }
-+                if let teleFlowBadgeSize {
-+                    teleFlowGiftsX += teleFlowBadgeSize.width + 8.0
-+                }
-+                if let teleFlowGramSize {
-+                    teleFlowGiftsX += teleFlowGramSize.width + 8.0
-+                }
-+                let teleFlowGiftsFrame = CGRect(origin: CGPoint(x: teleFlowGiftsX, y: floor((-teleFlowGiftsSize.height) * 0.5)), size: teleFlowGiftsSize)
++                let teleFlowGiftsFrame = CGRect(origin: CGPoint(x: -teleFlowGiftsSize.width * 0.5, y: teleFlowNextY), size: teleFlowGiftsSize)
 +                transition.updateFrameAdditive(view: teleFlowGiftsView, frame: teleFlowGiftsFrame)
 +                transition.updateAlpha(layer: teleFlowGiftsView.layer, alpha: subtitleBadgeFraction)
 +            }
@@ -213,3 +314,16 @@ index 7751e79..feac3e5 100644
              if let subtitleRatingView = self.subtitleRating?.view, let subtitleRatingSize {
                  let subtitleBadgeFrame = CGRect(origin: CGPoint(x: (-subtitleSize.width) * 0.5 - subtitleRatingInset, y: floor((-subtitleRatingSize.height) * 0.5)), size: subtitleRatingSize)
                  
+diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
+index 463ab66..ab5cd62 100644
+--- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
++++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
+@@ -5766,7 +5766,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
+                              
+                 let sectionWidth = layout.size.width - insets.left - insets.right
+                 if isFirstSection && sectionItems.first is PeerInfoScreenHeaderItem && !self.state.isEditing {
+-                    if self.data?.peer?.profileColor == nil && !self.headerNode.hasBottomStrip {
++                    if self.data?.peer?.profileColor == nil && !self.headerNode.hasBottomStrip && !self.headerNode.teleFlowHasPersonalProfileBackground {
+                         contentHeight -= 16.0
+                     }
+                 }
