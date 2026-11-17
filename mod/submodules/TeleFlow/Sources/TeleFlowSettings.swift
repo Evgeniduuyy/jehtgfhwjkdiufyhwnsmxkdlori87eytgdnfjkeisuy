@@ -26,7 +26,11 @@ public final class TeleFlowSettings {
             self.prefix + "showKinopoiskBadge": true,
             self.prefix + "kinopoiskBadgeText": "Пользователь KinopoiskGram",
             self.prefix + "localGramEnabled": false,
-            self.prefix + "localGramValue": 0
+            self.prefix + "localGramValue": 0,
+            self.prefix + "zalgoFilter": false,
+            self.prefix + "fullTimeServiceMessages": false,
+            self.prefix + "hideGiftsTab": false,
+            self.prefix + "stickerSizePercent": 100
         ])
     }
 
@@ -152,6 +156,62 @@ public final class TeleFlowSettings {
         let value = max(0, self.localGramValue + amount)
         self.localGramValue = value
         return value
+    }
+
+    // MARK: Chat & interface (local, this device only)
+
+    /// Strips zalgo combining marks from message text before rendering.
+    public var zalgoFilter: Bool {
+        get { return self.bool("zalgoFilter") }
+        set { self.setBool("zalgoFilter", newValue) }
+    }
+
+    /// Appends the full date and time to service messages (joins, calls, etc.).
+    public var fullTimeServiceMessages: Bool {
+        get { return self.bool("fullTimeServiceMessages") }
+        set { self.setBool("fullTimeServiceMessages", newValue) }
+    }
+
+    /// Hides the Gifts tab in all profiles.
+    public var hideGiftsTab: Bool {
+        get { return self.bool("hideGiftsTab") }
+        set { self.setBool("hideGiftsTab", newValue) }
+    }
+
+    /// Local sticker display size, percent of the stock size (50...150).
+    public var stickerSizePercent: Int {
+        get {
+            let value = self.defaults.integer(forKey: self.prefix + "stickerSizePercent")
+            return max(50, min(150, value))
+        }
+        set {
+            self.defaults.set(max(50, min(150, newValue)), forKey: self.prefix + "stickerSizePercent")
+        }
+    }
+
+    // MARK: Export / import
+
+    /// A JSON-serializable snapshot of every stored TeleFlow setting.
+    public func makeExport() -> [String: Any] {
+        let representation = self.defaults.dictionaryRepresentation()
+        var result: [String: Any] = [:]
+        for (key, value) in representation where key.hasPrefix(self.prefix) {
+            result[key] = value
+        }
+        return result
+    }
+
+    /// Applies an imported snapshot, ignoring keys that do not belong to TeleFlow.
+    public func applyImport(_ values: [String: Any]) {
+        for (key, value) in values where key.hasPrefix(self.prefix) {
+            if let boolValue = value as? Bool {
+                self.defaults.set(boolValue, forKey: key)
+            } else if let intValue = value as? Int {
+                self.defaults.set(intValue, forKey: key)
+            } else if let stringValue = value as? String {
+                self.defaults.set(stringValue, forKey: key)
+            }
+        }
     }
 }
 

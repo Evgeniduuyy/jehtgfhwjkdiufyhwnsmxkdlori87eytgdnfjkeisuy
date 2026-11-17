@@ -1,0 +1,217 @@
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageActionBubbleContentNode/BUILD b/submodules/TelegramUI/Components/Chat/ChatMessageActionBubbleContentNode/BUILD
+index c51712b..689acee 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageActionBubbleContentNode/BUILD
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageActionBubbleContentNode/BUILD
+@@ -10,6 +10,7 @@ swift_library(
+         "-warnings-as-errors",
+     ],
+     deps = [
++        "//submodules/TeleFlow",
+         "//submodules/AsyncDisplayKit",
+         "//submodules/Display",
+         "//submodules/SSignalKit/SwiftSignalKit",
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageActionBubbleContentNode/Sources/ChatMessageActionBubbleContentNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageActionBubbleContentNode/Sources/ChatMessageActionBubbleContentNode.swift
+index 22268a4..2d1a1b0 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageActionBubbleContentNode/Sources/ChatMessageActionBubbleContentNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageActionBubbleContentNode/Sources/ChatMessageActionBubbleContentNode.swift
+@@ -24,9 +24,20 @@ import Markdown
+ import ComponentFlow
+ import ReactionSelectionNode
+ import MultilineTextComponent
++import TeleFlow
+ 
+ private func attributedServiceMessageString(theme: ChatPresentationThemeData, strings: PresentationStrings, nameDisplayOrder: PresentationPersonNameOrder, dateTimeFormat: PresentationDateTimeFormat, message: EngineRawMessage, messageCount: Int? = nil, accountPeerId: EnginePeer.Id, forForumOverview: Bool) -> NSAttributedString? {
+-    return universalServiceMessageString(presentationData: (theme.theme, theme.wallpaper), strings: strings, nameDisplayOrder: nameDisplayOrder, dateTimeFormat: dateTimeFormat, message: EngineMessage(message), messageCount: messageCount, accountPeerId: accountPeerId, forChatList: false, forForumOverview: forForumOverview)
++    let string = universalServiceMessageString(presentationData: (theme.theme, theme.wallpaper), strings: strings, nameDisplayOrder: nameDisplayOrder, dateTimeFormat: dateTimeFormat, message: EngineMessage(message), messageCount: messageCount, accountPeerId: accountPeerId, forChatList: false, forForumOverview: forForumOverview)
++    if let string, TeleFlowSettings.shared.fullTimeServiceMessages, string.length > 0 {
++        let fullTimeString = stringForFullDate(timestamp: EngineMessage(message).timestamp, strings: strings, dateTimeFormat: dateTimeFormat)
++        if !fullTimeString.isEmpty {
++            let result = NSMutableAttributedString(attributedString: string)
++            let attributes = string.attributes(at: string.length - 1, effectiveRange: nil)
++            result.append(NSAttributedString(string: "\n" + fullTimeString, attributes: attributes))
++            return result
++        }
++    }
++    return string
+ }
+ 
+ public class ChatMessageActionBubbleContentNode: ChatMessageBubbleContentNode {
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/BUILD b/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/BUILD
+index 9498ab7..b2f7adb 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/BUILD
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/BUILD
+@@ -10,6 +10,7 @@ swift_library(
+         "-warnings-as-errors",
+     ],
+     deps = [
++        "//submodules/TeleFlow",
+         "//submodules/TelegramUI/Components/StaticGlassBackground",
+         "//submodules/AsyncDisplayKit",
+         "//submodules/Display",
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/Sources/ChatMessageStickerItemNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/Sources/ChatMessageStickerItemNode.swift
+index de115ff..5a751df 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/Sources/ChatMessageStickerItemNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/Sources/ChatMessageStickerItemNode.swift
+@@ -10,6 +10,7 @@ import AccountContext
+ import StickerResources
+ import ContextUI
+ import Markdown
++import TeleFlow
+ import ShimmerEffect
+ import WallpaperBackgroundNode
+ import ChatControllerInteraction
+@@ -440,7 +441,7 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
+     }
+     
+     override public func asyncLayout() -> (_ item: ChatMessageItem, _ params: ListViewItemLayoutParams, _ mergedTop: ChatMessageMerge, _ mergedBottom: ChatMessageMerge, _ dateHeaderAtBottom: ChatMessageHeaderSpec) -> (ListViewItemNodeLayout, (ListViewItemUpdateAnimation, ListViewItemApply, Bool) -> Void) {
+-        let displaySize = CGSize(width: 184.0, height: 184.0)
++        let displaySize = CGSize(width: 184.0 * CGFloat(max(50, min(150, TeleFlowSettings.shared.stickerSizePercent))) / 100.0, height: 184.0 * CGFloat(max(50, min(150, TeleFlowSettings.shared.stickerSizePercent))) / 100.0)
+         let telegramFile = self.telegramFile
+         let layoutConstants = self.layoutConstants
+         let imageLayout = self.imageNode.asyncLayout()
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/BUILD b/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/BUILD
+index c0c2f2a..fdb2f9b 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/BUILD
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/BUILD
+@@ -10,6 +10,7 @@ swift_library(
+         "-warnings-as-errors",
+     ],
+     deps = [
++        "//submodules/TeleFlow",
+         "//submodules/AsyncDisplayKit",
+         "//submodules/Display",
+         "//submodules/TelegramCore",
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
+index 8652b35..a5db85d 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
+@@ -4,6 +4,7 @@ import AsyncDisplayKit
+ import Display
+ import TelegramCore
+ import TextFormat
++import TeleFlow
+ import UrlEscaping
+ import TelegramUniversalVideoContent
+ import TextSelectionNode
+@@ -428,6 +429,8 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
+                 }
+                 
+                 
++                (rawText, messageEntities) = teleflowZalgoSanitize(rawText, entities: messageEntities)
++                
+                 if incoming && item.associatedData.isSuspiciousPeer, let entities = messageEntities {
+                     messageEntities = entities.filter(\.isShownFromSuspiciousPeer)
+                 }
+@@ -1855,3 +1858,83 @@ extension ChatMessageTextBubbleContentNode: ChatMessageQuoteSourceContentNode {
+         return EngineMessageReplyQuote(text: trimmedText.string, offset: textSelection.offset, entities: trimmedText.entities, media: nil)
+     }
+ }
++
++// MARK: - TeleFlow: zalgo filter (visual only)
++
++private func teleflowIsZalgoScalar(_ scalar: Unicode.Scalar) -> Bool {
++    let value = scalar.value
++    let ranges: [ClosedRange<UInt32>] = [
++        0x0300...0x036F,
++        0x0483...0x0489,
++        0x0591...0x05BD,
++        0x05BF...0x05BF,
++        0x05C1...0x05C2,
++        0x0610...0x061A,
++        0x064B...0x065F,
++        0x0670...0x0670,
++        0x06D6...0x06DC,
++        0x06DF...0x06E4,
++        0x0711...0x0711,
++        0x0730...0x074A,
++        0x1AB0...0x1AFF,
++        0x1DC0...0x1DFF,
++        0x20D0...0x20F0,
++        0xFE20...0xFE2F
++    ]
++    for range in ranges {
++        if range.contains(value) {
++            return true
++        }
++    }
++    return false
++}
++
++/// Strips zalgo combining marks from the display text and shifts entity ranges so
++/// links, formatting and custom emoji keep pointing at the right characters.
++/// Only affects how the message is drawn on this device.
++private func teleflowZalgoSanitize(_ text: String, entities: [MessageTextEntity]?) -> (String, [MessageTextEntity]?) {
++    guard TeleFlowSettings.shared.zalgoFilter else {
++        return (text, entities)
++    }
++    var kept: [Unicode.Scalar] = []
++    var map: [Int] = []
++    var newUtf16 = 0
++    var removed = false
++    for scalar in text.unicodeScalars {
++        let width = UTF16.width(scalar)
++        if teleflowIsZalgoScalar(scalar) {
++            removed = true
++            for _ in 0..<width {
++                map.append(newUtf16)
++            }
++            continue
++        }
++        for _ in 0..<width {
++            map.append(newUtf16)
++        }
++        kept.append(scalar)
++        newUtf16 += width
++    }
++    map.append(newUtf16)
++    guard removed else {
++        return (text, entities)
++    }
++    let sanitized = String(String.UnicodeScalarView(kept))
++    var updatedEntities: [MessageTextEntity]?
++    if let list = entities {
++        var result: [MessageTextEntity] = []
++        for entity in list {
++            let originalStart = entity.range.lowerBound
++            let originalEnd = entity.range.upperBound
++            let clampedStart = min(originalStart, map.count - 1)
++            let clampedEnd = min(originalEnd, map.count - 1)
++            let newStart = map[clampedStart]
++            let newEnd = map[clampedEnd]
++            if newEnd > newStart {
++                result.append(MessageTextEntity(range: newStart..<newEnd, type: entity.type))
++            }
++        }
++        updatedEntities = result
++    }
++    return (sanitized, updatedEntities)
++}
+\ No newline at end of file
+diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoData.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoData.swift
+index 880fc99..3129456 100644
+--- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoData.swift
++++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoData.swift
+@@ -1,4 +1,5 @@
+ import Foundation
++import TeleFlow
+ import UIKit
+ import TelegramCore
+ import SwiftSignalKit
+@@ -1642,7 +1643,7 @@ func peerInfoScreenData(
+                 var availablePanes = availablePanes
+                 if isMyProfile {
+                     availablePanes?.insert(.stories, at: 0)
+-                    if availablePanes != nil, profileGiftsContext != nil, let cachedData = peerView.cachedData as? CachedUserData {
++                    if availablePanes != nil, profileGiftsContext != nil, let cachedData = peerView.cachedData as? CachedUserData, !TeleFlowSettings.shared.hideGiftsTab {
+                         if let starGiftsCount = cachedData.starGiftsCount, starGiftsCount > 0 {
+                             availablePanes?.insert(.gifts, at: 1)
+                         }
+@@ -1655,7 +1656,7 @@ func peerInfoScreenData(
+                         availablePanes?.insert(.stories, at: 0)
+                     }
+                     
+-                    if availablePanes != nil, profileGiftsContext != nil, let cachedData = peerView.cachedData as? CachedUserData, peerView.peerId != context.account.peerId {
++                    if availablePanes != nil, profileGiftsContext != nil, let cachedData = peerView.cachedData as? CachedUserData, peerView.peerId != context.account.peerId, !TeleFlowSettings.shared.hideGiftsTab {
+                         if let starGiftsCount = cachedData.starGiftsCount, starGiftsCount > 0 {
+                             availablePanes?.insert(.gifts, at: hasStories ? 1 : 0)
+                         }

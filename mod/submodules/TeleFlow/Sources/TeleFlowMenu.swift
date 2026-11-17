@@ -194,6 +194,12 @@ public enum TeleFlowMenu {
                         return "витрина: \(TeleFlowGiftStore.shared.count)"
                     }, action: { controller in
                         controller.navigationController?.pushViewController(TeleFlowMenu.makeMarketController(), animated: true)
+                    })),
+                    TeleFlowRow(title: "Чат и интерфейс", kind: .link(icon: "message.fill", color: .systemGreen, value: { nil }, action: { controller in
+                        controller.navigationController?.pushViewController(TeleFlowMenu.makeChatInterfaceController(), animated: true)
+                    })),
+                    TeleFlowRow(title: "Настройки мода", kind: .link(icon: "gearshape.fill", color: .systemGray, value: { nil }, action: { controller in
+                        controller.navigationController?.pushViewController(TeleFlowMenu.makeModSettingsController(), animated: true)
                     }))
                 ])
             ]
@@ -311,6 +317,90 @@ public enum TeleFlowMenu {
         })
     }
 
+    static func makeChatInterfaceController() -> UIViewController {
+        let settings = TeleFlowSettings.shared
+        return TeleFlowListController(title: "Чат и интерфейс", sections: {
+            return [
+                TeleFlowSection(header: "Сообщения", footer: "Всё применяется локально, на этом устройстве: настоящие сообщения не меняются.", rows: [
+                    TeleFlowRow(title: "Zalgo-фильтр", kind: .toggle(icon: "textformat.123", color: .systemPurple, get: { settings.zalgoFilter }, set: { settings.zalgoFilter = $0 })),
+                    TeleFlowRow(title: "Полное время у системных сообщений", kind: .toggle(icon: "clock.fill", color: .systemBlue, get: { settings.fullTimeServiceMessages }, set: { settings.fullTimeServiceMessages = $0 }))
+                ]),
+                TeleFlowSection(header: "Профиль", footer: "Вкладка «Подарки» в профилях не показывается.", rows: [
+                    TeleFlowRow(title: "Скрыть вкладку «Подарки» в профиле", kind: .toggle(icon: "gift.fill", color: .systemPink, get: { settings.hideGiftsTab }, set: { settings.hideGiftsTab = $0 }))
+                ]),
+                TeleFlowSection(header: "Стикеры", footer: "Локальный размер показа стикеров в чатах: 50%–150%. На отправку не влияет.", rows: [
+                    TeleFlowRow(title: "Размер стикеров", kind: .link(icon: "rectangle.on.rectangle.angled", color: .systemTeal, value: {
+                        return "\(settings.stickerSizePercent)%"
+                    }, action: { controller in
+                        let alert = UIAlertController(title: "Размер стикеров", message: "Проценты от обычного размера (50–150)", preferredStyle: .alert)
+                        alert.addTextField { tf in
+                            tf.keyboardType = .numberPad
+                            tf.text = "\(settings.stickerSizePercent)"
+                        }
+                        alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+                        alert.addAction(UIAlertAction(title: "Готово", style: .default, handler: { [weak alert, weak controller] _ in
+                            if let text = alert?.textFields?.first?.text, let value = Int(text) {
+                                settings.stickerSizePercent = value
+                            }
+                            (controller as? TeleFlowListController)?.reload()
+                        }))
+                        controller.present(alert, animated: true)
+                    }))
+                ])
+            ]
+        })
+    }
+
+    static func makeModSettingsController() -> UIViewController {
+        let settings = TeleFlowSettings.shared
+        return TeleFlowListController(title: "Настройки мода", sections: {
+            return [
+                TeleFlowSection(header: "Экспорт и импорт", footer: "Все переключатели KinopoiskGram одним файлом JSON — удобно при переустановке. Экспорт кладёт текст в буфер обмена и открывает меню «Поделиться».", rows: [
+                    TeleFlowRow(title: "Экспорт настроек (JSON)", kind: .button(isDestructive: false, action: { controller in
+                        guard let data = try? JSONSerialization.data(withJSONObject: settings.makeExport(), options: [.prettyPrinted, .sortedKeys]), let json = String(data: data, encoding: .utf8) else {
+                            return
+                        }
+                        UIPasteboard.general.string = json
+                        let activity = UIActivityViewController(activityItems: [json], applicationActivities: nil)
+                        if let popover = activity.popoverPresentationController {
+                            popover.sourceView = controller.view
+                            popover.sourceRect = CGRect(x: controller.view.bounds.midX, y: controller.view.bounds.midY, width: 0.0, height: 0.0)
+                        }
+                        controller.present(activity, animated: true)
+                    })),
+                    TeleFlowRow(title: "Импорт настроек (JSON)", kind: .button(isDestructive: false, action: { controller in
+                        let alert = UIAlertController(title: "Импорт настроек", message: "Вставь JSON с настройками", preferredStyle: .alert)
+                        alert.addTextField { tf in
+                            if let json = UIPasteboard.general.string {
+                                tf.text = json
+                            }
+                        }
+                        alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+                        alert.addAction(UIAlertAction(title: "Импортировать", style: .default, handler: { [weak alert, weak controller] _ in
+                            guard let text = alert?.textFields?.first?.text, let data = text.data(using: .utf8), let values = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                                return
+                            }
+                            settings.applyImport(values)
+                            (controller as? TeleFlowListController)?.reload()
+                        }))
+                        controller.present(alert, animated: true)
+                    })),
+                    TeleFlowRow(title: "Сбросить все настройки мода", kind: .button(isDestructive: true, action: { controller in
+                        let alert = UIAlertController(title: "Сбросить настройки?", message: "Все переключатели вернутся к значениям по умолчанию. Витрина и записи не трогаются.", preferredStyle: .alert)
+                        alert.addAction(UIAlertAction(title: "Сбросить", style: .destructive, handler: { [weak controller] _ in
+                            for (key, _) in settings.makeExport() {
+                                UserDefaults.standard.removeObject(forKey: key)
+                            }
+                            (controller as? TeleFlowListController)?.reload()
+                        }))
+                        alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+                        controller.present(alert, animated: true)
+                    }))
+                ])
+            ]
+        })
+    }
+
     static func makeLocalStarsController() -> UIViewController {
         let settings = TeleFlowSettings.shared
         return TeleFlowListController(title: "Локальные звёзды", sections: {
@@ -363,6 +453,88 @@ public enum TeleFlowMenu {
                             (controller as? TeleFlowListController)?.reload()
                         }))
                         controller.present(alert, animated: true)
+                    })),
+                    TeleFlowRow(title: "Подарить gram (визуально)", kind: .link(icon: "paperplane.fill", color: .systemOrange, value: {
+                        let count = TeleFlowGiftStore.shared.allTransfers.filter { $0.isGram }.count
+                        return count > 0 ? "\(count)" : nil
+                    }, action: { controller in
+                        controller.navigationController?.pushViewController(TeleFlowMenu.makeGiftGramController(), animated: true)
+                    }))
+                ])
+            ]
+        })
+    }
+
+    static func makeGiftGramController() -> UIViewController {
+        let settings = TeleFlowSettings.shared
+        return TeleFlowListController(title: "Подарить gram (визуал)", sections: {
+            var rows: [TeleFlowRow] = [
+                TeleFlowRow(title: "Отправить gram человеку (визуально)", kind: .button(isDestructive: false, action: { controller in
+                    let alert = UIAlertController(title: "Отправить gram (визуально)", message: "Запись останется только у тебя — настоящие переводы не отправляются.", preferredStyle: .alert)
+                    alert.addTextField { tf in
+                        tf.placeholder = "@юзернейм или ID"
+                    }
+                    alert.addTextField { tf in
+                        tf.placeholder = "Сумма gram"
+                        tf.keyboardType = .numberPad
+                    }
+                    alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+                    alert.addAction(UIAlertAction(title: "Отправить", style: .default, handler: { [weak alert, weak controller] _ in
+                        let recipient = alert?.textFields?.first?.text ?? ""
+                        let amountText = alert?.textFields?.last?.text ?? ""
+                        guard !recipient.trimmingCharacters(in: .whitespaces).isEmpty, let amount = Int64(amountText), amount > 0 else {
+                            return
+                        }
+                        if settings.localGramValue >= amount {
+                            settings.addLocalGram(-amount)
+                            TeleFlowGiftStore.shared.recordGramTransfer(amount: amount, recipientName: recipient.trimmingCharacters(in: .whitespaces), recipientId: 0)
+                            controller?.navigationController?.pushViewController(TeleFlowMenu.makeTransfersController(), animated: true)
+                        }
+                    }))
+                    controller.present(alert, animated: true)
+                }))
+            ]
+            for transfer in TeleFlowGiftStore.shared.allTransfers.filter({ $0.isGram }) {
+                rows.append(TeleFlowRow(title: "\(transfer.emoji) → \(transfer.recipientName)", kind: .link(icon: nil, color: nil, value: { "\(transfer.amount) gram" }, action: { _ in })))
+            }
+            if TeleFlowGiftStore.shared.transferCount == 0 {
+                rows.append(TeleFlowRow(title: "Пока нет визуальных переводов", kind: .choice(isSelected: { false }, action: {})))
+            }
+            return [
+                TeleFlowSection(header: "Визуальные переводы", footer: "Показываются только в этом меню. Баланс gram меняется только у тебя.", rows: rows)
+            ]
+        })
+    }
+
+    static func makeTransfersController() -> UIViewController {
+        return TeleFlowListController(title: "Подарено (визуал)", sections: {
+            var rows: [TeleFlowRow] = []
+            for transfer in TeleFlowGiftStore.shared.allTransfers {
+                let title: String
+                if transfer.isGram {
+                    title = "🔥 \(transfer.amount) gram → \(transfer.recipientName)"
+                } else {
+                    title = "\(transfer.emoji) \(transfer.title) → \(transfer.recipientName)"
+                }
+                rows.append(TeleFlowRow(title: title, kind: .link(icon: nil, color: nil, value: { nil }, action: { controller in
+                    let alert = UIAlertController(title: title, message: "Визуальная запись. Настоящий перевод не отправлялся — это только журнал в меню мода.", preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: "Удалить запись", style: .destructive, handler: { _ in
+                        TeleFlowGiftStore.shared.removeTransfer(uid: transfer.uid)
+                        (controller as? TeleFlowListController)?.reload()
+                    }))
+                    alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+                    controller.present(alert, animated: true)
+                })))
+            }
+            if rows.isEmpty {
+                rows.append(TeleFlowRow(title: "Пока ничего не подарено (визуально)", kind: .choice(isSelected: { false }, action: {})))
+            }
+            return [
+                TeleFlowSection(header: "Журнал", footer: "Локальные записи о визуальных подарках и переводах gram. Никому ничего не отправляется.", rows: rows),
+                TeleFlowSection(footer: nil, rows: [
+                    TeleFlowRow(title: "Очистить журнал", kind: .button(isDestructive: true, action: { controller in
+                        TeleFlowGiftStore.shared.removeAllTransfers()
+                        (controller as? TeleFlowListController)?.reload()
                     }))
                 ])
             ]
@@ -377,6 +549,9 @@ public enum TeleFlowMenu {
                 TeleFlowSection(header: "Витрина", footer: "Твои визуальные подарки и крафт. Они живут только в этом меню — их не видно никому и нигде в настоящем Telegram.", rows: [
                     TeleFlowRow(title: "Открыть витрину (\(TeleFlowGiftStore.shared.count))", kind: .link(icon: "sparkles", color: .systemYellow, value: { nil }, action: { controller in
                         controller.navigationController?.pushViewController(TeleFlowMenu.makeShowcaseController(), animated: true)
+                    })),
+                    TeleFlowRow(title: "Подарено (визуально) (\(TeleFlowGiftStore.shared.transferCount))", kind: .link(icon: "paperplane.fill", color: .systemOrange, value: { nil }, action: { controller in
+                        controller.navigationController?.pushViewController(TeleFlowMenu.makeTransfersController(), animated: true)
                     })),
                     TeleFlowRow(title: "Очистить витрину", kind: .button(isDestructive: true, action: { controller in
                         TeleFlowGiftStore.shared.removeAll()
@@ -422,7 +597,10 @@ public enum TeleFlowMenu {
             var rows: [TeleFlowRow] = []
             let gifts = TeleFlowGiftStore.shared.all
             for gift in gifts {
-                let title = (gift.upgraded ? "✨ " : "") + gift.emoji + " " + gift.name + (gift.upgraded ? " · ур. \(gift.priceGram)" : "") + (gift.crafted ? " · крафт" : "")
+                var title = (gift.upgraded ? "✨ " : "") + gift.emoji + " " + gift.name + (gift.upgraded ? " · ур. \(gift.priceGram)" : "") + (gift.crafted ? " · крафт" : "")
+                if gift.inProfile {
+                    title += " · 📌 в профиле"
+                }
                 rows.append(TeleFlowRow(title: title, kind: .link(icon: nil, color: nil, value: { nil }, action: { controller in
                     TeleFlowMenu.showGiftActions(gift, controller: controller)
                 })))
@@ -446,6 +624,13 @@ public enum TeleFlowMenu {
                 })
             }))
         }
+        alert.addAction(UIAlertAction(title: "Подарить (визуально)", style: .default, handler: { _ in
+            TeleFlowMenu.giftAwayVisually(gift, controller: controller)
+        }))
+        alert.addAction(UIAlertAction(title: gift.inProfile ? "Убрать из профиля (визуально)" : "В профиль (визуально)", style: .default, handler: { _ in
+            TeleFlowGiftStore.shared.setInProfile(uid: gift.uid, inProfile: !gift.inProfile)
+            (controller as? TeleFlowListController)?.reload()
+        }))
         alert.addAction(UIAlertAction(title: "Крафт: выбрать пару", style: .default, handler: { _ in
             TeleFlowMenu.pickCraftPartner(gift, controller: controller)
         }))
@@ -454,6 +639,25 @@ public enum TeleFlowMenu {
             (controller as? TeleFlowListController)?.reload()
         }))
         alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+        controller.present(alert, animated: true)
+    }
+
+    /// Visually gifts a showcase gift to a person. The gift leaves the local showcase
+    /// and a record is written to the local journal. Nothing is actually sent anywhere.
+    private static func giftAwayVisually(_ gift: TeleFlowShowcaseGift, controller: UIViewController) {
+        let alert = UIAlertController(title: "Подарить \(gift.emoji) \(gift.name)", message: "Кому? Запись останется только у тебя — настоящий подарок не отправляется.", preferredStyle: .alert)
+        alert.addTextField { tf in
+            tf.placeholder = "@юзернейм или ID"
+        }
+        alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Подарить", style: .default, handler: { [weak alert, weak controller] _ in
+            let recipient = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespaces) ?? ""
+            guard !recipient.isEmpty else {
+                return
+            }
+            TeleFlowGiftStore.shared.giftAway(uid: gift.uid, recipientName: recipient, recipientId: 0)
+            controller?.navigationController?.pushViewController(TeleFlowMenu.makeTransfersController(), animated: true)
+        }))
         controller.present(alert, animated: true)
     }
 
