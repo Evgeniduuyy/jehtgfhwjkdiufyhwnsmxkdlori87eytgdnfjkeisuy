@@ -21,7 +21,12 @@ public final class TeleFlowSettings {
             self.prefix + "ghostHideReadReceipts": false,
             self.prefix + "hideSponsoredMessages": false,
             self.prefix + "localStarsEnabled": false,
-            self.prefix + "localStarsValue": 0
+            self.prefix + "localStarsValue": 0,
+            self.prefix + "showPeerIdInProfile": true,
+            self.prefix + "showKinopoiskBadge": true,
+            self.prefix + "kinopoiskBadgeText": "Пользователь KinopoiskGram",
+            self.prefix + "localGramEnabled": false,
+            self.prefix + "localGramValue": 0
         ])
     }
 
@@ -107,6 +112,46 @@ public final class TeleFlowSettings {
     /// If the visual override is on, returns the value to display instead of the real balance.
     public func overriddenStarsBalance(real: Int64) -> Int64 {
         return self.localStarsEnabled ? self.localStarsValue : real
+    }
+
+    // MARK: Profile header (visual, this device only)
+
+    /// Appends " • ID: N" to the subtitle of every profile header.
+    public var showPeerIdInProfile: Bool {
+        get { return self.bool("showPeerIdInProfile") }
+        set { self.setBool("showPeerIdInProfile", newValue) }
+    }
+
+    /// Shows the "Пользователь KinopoiskGram" badge in other people's profiles.
+    public var showKinopoiskBadge: Bool {
+        get { return self.bool("showKinopoiskBadge") }
+        set { self.setBool("showKinopoiskBadge", newValue) }
+    }
+
+    /// The badge label, so it can be renamed in one place.
+    public var kinopoiskBadgeText: String {
+        get { return self.defaults.string(forKey: self.prefix + "kinopoiskBadgeText") ?? "Пользователь KinopoiskGram" }
+        set { self.defaults.set(newValue, forKey: self.prefix + "kinopoiskBadgeText") }
+    }
+
+    // MARK: Local gram (visual-only balance, like local stars)
+
+    public var localGramEnabled: Bool {
+        get { return self.bool("localGramEnabled") }
+        set { self.setBool("localGramEnabled", newValue) }
+    }
+
+    public var localGramValue: Int64 {
+        get { return Int64(self.defaults.integer(forKey: self.prefix + "localGramValue")) }
+        set { self.defaults.set(Int(newValue), forKey: self.prefix + "localGramValue") }
+    }
+
+    /// Changes the visual gram balance by a signed amount. Returns the new value.
+    @discardableResult
+    public func addLocalGram(_ amount: Int64) -> Int64 {
+        let value = max(0, self.localGramValue + amount)
+        self.localGramValue = value
+        return value
     }
 }
 

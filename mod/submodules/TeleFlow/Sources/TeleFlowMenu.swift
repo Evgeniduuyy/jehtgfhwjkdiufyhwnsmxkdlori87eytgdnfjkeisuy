@@ -184,6 +184,16 @@ public enum TeleFlowMenu {
                         return TeleFlowSettings.shared.localStarsEnabled ? "\(TeleFlowSettings.shared.localStarsValue)" : nil
                     }, action: { controller in
                         controller.navigationController?.pushViewController(TeleFlowMenu.makeLocalStarsController(), animated: true)
+                    })),
+                    TeleFlowRow(title: "Локальные gram", kind: .link(icon: "flame.fill", color: .systemOrange, value: {
+                        return TeleFlowSettings.shared.localGramEnabled ? "\(TeleFlowSettings.shared.localGramValue)" : nil
+                    }, action: { controller in
+                        controller.navigationController?.pushViewController(TeleFlowMenu.makeLocalGramController(), animated: true)
+                    })),
+                    TeleFlowRow(title: "Маркет подарков (визуал)", kind: .link(icon: "bag.fill", color: .systemPink, value: {
+                        return "витрина: \(TeleFlowGiftStore.shared.count)"
+                    }, action: { controller in
+                        controller.navigationController?.pushViewController(TeleFlowMenu.makeMarketController(), animated: true)
                     }))
                 ])
             ]
@@ -276,6 +286,24 @@ public enum TeleFlowMenu {
                         UIPasteboard.general.string = "\(TeleFlowSettings.shared.accountId)"
                     }))
                 ]),
+                TeleFlowSection(header: "Профиль", footer: "ID под именем — у всех пользователей. Бейдж «Пользователь KinopoiskGram» — в чужих профилях. Всё это видно только на этом устройстве.", rows: [
+                    TeleFlowRow(title: "Показывать ID в профилях", kind: .toggle(icon: "number", color: .systemBlue, get: { settings.showPeerIdInProfile }, set: { settings.showPeerIdInProfile = $0 })),
+                    TeleFlowRow(title: "Бейдж «Пользователь KinopoiskGram»", kind: .toggle(icon: "app.badge.fill", color: .systemBlue, get: { settings.showKinopoiskBadge }, set: { settings.showKinopoiskBadge = $0 })),
+                    TeleFlowRow(title: "Текст бейджа", kind: .link(icon: nil, color: nil, value: { settings.kinopoiskBadgeText }, action: { controller in
+                        let alert = UIAlertController(title: "Текст бейджа", message: "Что показывать в чужих профилях", preferredStyle: .alert)
+                        alert.addTextField { tf in
+                            tf.text = settings.kinopoiskBadgeText
+                        }
+                        alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+                        alert.addAction(UIAlertAction(title: "Готово", style: .default, handler: { [weak alert, weak controller] _ in
+                            if let text = alert?.textFields?.first?.text, !text.isEmpty {
+                                settings.kinopoiskBadgeText = String(text.prefix(40))
+                            }
+                            (controller as? TeleFlowListController)?.reload()
+                        }))
+                        controller.present(alert, animated: true)
+                    }))
+                ]),
                 TeleFlowSection(header: "Реклама", footer: "Спонсорские сообщения в каналах и в поиске не показываются.", rows: [
                     TeleFlowRow(title: "Убрать рекламу в каналах", kind: .toggle(icon: "megaphone.fill", color: .systemRed, get: { settings.hideSponsoredMessages }, set: { settings.hideSponsoredMessages = $0 }))
                 ])
@@ -309,6 +337,200 @@ public enum TeleFlowMenu {
                 ])
             ]
         })
+    }
+
+    // MARK: Local gram (visual-only)
+
+    static func makeLocalGramController() -> UIViewController {
+        let settings = TeleFlowSettings.shared
+        return TeleFlowListController(title: "Локальные gram", sections: {
+            return [
+                TeleFlowSection(header: "Gram", footer: "Визуальный баланс gram: показывается в твоём профиле и в маркет-витрине мода. Настоящий баланс и покупки Telegram не затрагиваются, всё остаётся только на этом устройстве.", rows: [
+                    TeleFlowRow(title: "Показывать баланс в профиле", kind: .toggle(icon: "flame.fill", color: .systemOrange, get: { settings.localGramEnabled }, set: { settings.localGramEnabled = $0 })),
+                    TeleFlowRow(title: "Значение баланса", kind: .link(icon: nil, color: nil, value: {
+                        return "\(settings.localGramValue)"
+                    }, action: { controller in
+                        let alert = UIAlertController(title: "Баланс gram", message: "Введи число, которое будет показано", preferredStyle: .alert)
+                        alert.addTextField { tf in
+                            tf.keyboardType = .numberPad
+                            tf.text = "\(settings.localGramValue)"
+                        }
+                        alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+                        alert.addAction(UIAlertAction(title: "Готово", style: .default, handler: { [weak alert, weak controller] _ in
+                            if let text = alert?.textFields?.first?.text, let value = Int64(text) {
+                                settings.localGramValue = value
+                            }
+                            (controller as? TeleFlowListController)?.reload()
+                        }))
+                        controller.present(alert, animated: true)
+                    }))
+                ])
+            ]
+        })
+    }
+
+    // MARK: Market (visual showcase)
+
+    static func makeMarketController() -> UIViewController {
+        return TeleFlowListController(title: "Маркет (визуал)", sections: {
+            return [
+                TeleFlowSection(header: "Витрина", footer: "Твои визуальные подарки и крафт. Они живут только в этом меню — их не видно никому и нигде в настоящем Telegram.", rows: [
+                    TeleFlowRow(title: "Открыть витрину (\(TeleFlowGiftStore.shared.count))", kind: .link(icon: "sparkles", color: .systemYellow, value: { nil }, action: { controller in
+                        controller.navigationController?.pushViewController(TeleFlowMenu.makeShowcaseController(), animated: true)
+                    })),
+                    TeleFlowRow(title: "Очистить витрину", kind: .button(isDestructive: true, action: { controller in
+                        TeleFlowGiftStore.shared.removeAll()
+                        (controller as? TeleFlowListController)?.reload()
+                    }))
+                ]),
+                TeleFlowSection(header: "Каталог", footer: "Покупка тратит локальные gram. Баланс меняется в разделе «Локальные gram».", rows: TeleFlowGiftStore.catalog.map { gift in
+                    return TeleFlowRow(title: "\(gift.emoji) \(gift.name)", kind: .link(icon: nil, color: nil, value: {
+                        return "🔥 \(gift.priceGram)"
+                    }, action: { controller in
+                        TeleFlowMenu.buyGift(gift, controller: controller)
+                    }))
+                })
+            ]
+        })
+    }
+
+    private static func buyGift(_ gift: TeleFlowShowcaseGift, controller: UIViewController) {
+        let settings = TeleFlowSettings.shared
+        if settings.localGramValue < gift.priceGram {
+            let alert = UIAlertController(title: "Не хватает gram", message: "Баланс: \(settings.localGramValue), нужно: \(gift.priceGram). Баланс визуальный — можешь поднять его в «Локальных gram».", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "Открыть «Локальные gram»", style: .default, handler: { _ in
+                controller.navigationController?.pushViewController(TeleFlowMenu.makeLocalGramController(), animated: true)
+            }))
+            alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+            controller.present(alert, animated: true)
+            return
+        }
+        let confirm = UIAlertController(title: "\(gift.emoji) \(gift.name)", message: "Купить за 🔥 \(gift.priceGram) gram? Подарок появится в визуальной витрине мода.", preferredStyle: .alert)
+        confirm.addAction(UIAlertAction(title: "Купить", style: .default, handler: { _ in
+            settings.addLocalGram(-gift.priceGram)
+            TeleFlowGiftStore.shared.add(gift)
+            controller.navigationController?.pushViewController(TeleFlowMenu.makeShowcaseController(), animated: true)
+        }))
+        confirm.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+        controller.present(confirm, animated: true)
+    }
+
+    // MARK: Showcase (owned visual gifts, upgrade & craft)
+
+    static func makeShowcaseController() -> UIViewController {
+        return TeleFlowListController(title: "Витрина", sections: {
+            var rows: [TeleFlowRow] = []
+            let gifts = TeleFlowGiftStore.shared.all
+            for gift in gifts {
+                let title = (gift.upgraded ? "✨ " : "") + gift.emoji + " " + gift.name + (gift.upgraded ? " · ур. \(gift.priceGram)" : "") + (gift.crafted ? " · крафт" : "")
+                rows.append(TeleFlowRow(title: title, kind: .link(icon: nil, color: nil, value: { nil }, action: { controller in
+                    TeleFlowMenu.showGiftActions(gift, controller: controller)
+                })))
+            }
+            if gifts.isEmpty {
+                rows.append(TeleFlowRow(title: "Пока пусто — купи что-нибудь в каталоге", kind: .choice(isSelected: { false }, action: {})))
+            }
+            return [
+                TeleFlowSection(header: "Мои подарки (визуал)", footer: "«Улучшить» — анимация улучшения и номер модели. «Крафт» — соединяет два подарка в новый. Всё только в этом меню.", rows: rows)
+            ]
+        })
+    }
+
+    private static func showGiftActions(_ gift: TeleFlowShowcaseGift, controller: UIViewController) {
+        let alert = UIAlertController(title: "\(gift.emoji) \(gift.name)", message: gift.upgraded ? "Улучшен · модель №\(gift.priceGram)" : "Не улучшен", preferredStyle: .actionSheet)
+        if !gift.upgraded {
+            alert.addAction(UIAlertAction(title: "Улучшить ✨", style: .default, handler: { _ in
+                TeleFlowMenu.playUpgradeAnimation(emoji: gift.emoji, controller: controller, completion: {
+                    TeleFlowGiftStore.shared.setUpgraded(uid: gift.uid, upgraded: true)
+                    (controller as? TeleFlowListController)?.reload()
+                })
+            }))
+        }
+        alert.addAction(UIAlertAction(title: "Крафт: выбрать пару", style: .default, handler: { _ in
+            TeleFlowMenu.pickCraftPartner(gift, controller: controller)
+        }))
+        alert.addAction(UIAlertAction(title: "Убрать с витрины", style: .destructive, handler: { _ in
+            TeleFlowGiftStore.shared.remove(uid: gift.uid)
+            (controller as? TeleFlowListController)?.reload()
+        }))
+        alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+        controller.present(alert, animated: true)
+    }
+
+    private static func pickCraftPartner(_ gift: TeleFlowShowcaseGift, controller: UIViewController) {
+        let others = TeleFlowGiftStore.shared.all.filter { $0.uid != gift.uid }
+        guard !others.isEmpty else {
+            let alert = UIAlertController(title: "Нужна пара", message: "Для крафта нужно два подарка на витрине.", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "Ок", style: .cancel))
+            controller.present(alert, animated: true)
+            return
+        }
+        let alert = UIAlertController(title: "Крафт", message: "С чем соединить \(gift.emoji) \(gift.name)?", preferredStyle: .actionSheet)
+        for other in others.prefix(8) {
+            alert.addAction(UIAlertAction(title: "\(other.emoji) \(other.name)", style: .default, handler: { _ in
+                TeleFlowGiftStore.shared.remove(uid: gift.uid)
+                TeleFlowGiftStore.shared.remove(uid: other.uid)
+                let price = max(10, (gift.priceGram + other.priceGram) / 2 + 20)
+                let crafted = TeleFlowShowcaseGift(uid: "crafted." + String(UUID().uuidString.prefix(6)), name: "\(gift.name) + \(other.name)", emoji: "🎁", priceGram: price, upgraded: false, crafted: true)
+                TeleFlowGiftStore.shared.add(crafted)
+                (controller as? TeleFlowListController)?.reload()
+            }))
+        }
+        alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+        controller.present(alert, animated: true)
+    }
+
+    /// A short sparkle animation played over the market screen when a gift is "upgraded".
+    private static func playUpgradeAnimation(emoji: String, controller: UIViewController, completion: @escaping () -> Void) {
+        guard let view = controller.navigationController?.view ?? controller.view else {
+            completion()
+            return
+        }
+        let overlay = UIView(frame: view.bounds)
+        overlay.backgroundColor = UIColor(white: 0.0, alpha: 0.55)
+        overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(overlay)
+
+        let label = UILabel()
+        label.text = emoji
+        label.font = UIFont.systemFont(ofSize: 72.0)
+        label.sizeToFit()
+        label.center = CGPoint(x: overlay.bounds.midX, y: overlay.bounds.midY)
+        overlay.addSubview(label)
+
+        let sparkles = ["✨", "⭐️", "🌟", "💫"]
+        for sparkle in sparkles {
+            let sparkleLabel = UILabel()
+            sparkleLabel.text = sparkle
+            sparkleLabel.font = UIFont.systemFont(ofSize: 24.0)
+            sparkleLabel.sizeToFit()
+            let angle = CGFloat.random(in: 0.0...(2.0 * .pi))
+            let radius: CGFloat = 90.0
+            sparkleLabel.center = CGPoint(x: overlay.bounds.midX, y: overlay.bounds.midY)
+            overlay.addSubview(sparkleLabel)
+            UIView.animate(withDuration: 0.8, delay: 0.05, options: [.curveEaseOut], animations: {
+                sparkleLabel.center = CGPoint(x: overlay.bounds.midX + cos(angle) * radius, y: overlay.bounds.midY + sin(angle) * radius)
+                sparkleLabel.alpha = 0.0
+            }, completion: { _ in
+                sparkleLabel.removeFromSuperview()
+            })
+        }
+
+        label.transform = CGAffineTransform(scaleX: 0.4, y: 0.4)
+        UIView.animate(withDuration: 0.45, delay: 0.0, usingSpringWithDamping: 0.5, initialSpringVelocity: 0.6, options: [], animations: {
+            label.transform = CGAffineTransform(scaleX: 1.0, y: 1.0)
+        }, completion: nil)
+
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            UIView.animate(withDuration: 0.25, animations: {
+                overlay.alpha = 0.0
+            }, completion: { _ in
+                overlay.removeFromSuperview()
+                completion()
+            })
+        }
     }
 
     /// Presents the menu over whatever is currently on screen.
