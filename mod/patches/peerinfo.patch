@@ -62,7 +62,7 @@ index 7751e79..a5f2251 100644
          self.subtitleNodeRawContainer.view.addGestureRecognizer(phoneGestureRecognizer)
 +        
 +        let peerIdGestureRecognizer = UITapGestureRecognizer(target: self, action: #selector(self.handlePeerIdTap(_:)))
-+        peerIdGestureRecognizer.cancelsTouchesOnView = false
++        peerIdGestureRecognizer.cancelsTouchesInView = false
 +        self.subtitleNodeRawContainer.view.addGestureRecognizer(peerIdGestureRecognizer)
 +    }
 +    
@@ -186,7 +186,7 @@ index 7751e79..a5f2251 100644
 +            if teleFlowPeerId != 0 {
 +                let suffix = " • ID: \(teleFlowPeerId)"
 +                subtitleStringText += suffix
-+                if let subtitleAttributedText {
++                if var subtitleAttributedText {
 +                    let updatedSubtitle = NSMutableAttributedString(attributedString: subtitleAttributedText)
 +                    var attributes: [NSAttributedString.Key: Any] = [:]
 +                    if updatedSubtitle.length > 0 {
